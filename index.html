@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NET_HUB — Network Engineer Knowledge Base</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Courier New', monospace; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128;
+  --border: #30363d; --green: #39d353; --cyan: #58a6ff;
+  --amber: #e3b341; --red: #f85149; --purple: #bc8cff;
+  --muted: #8b949e; --text: #c9d1d9; --text-bright: #f0f6fc;
+}
+.hub { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+.topbar { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.logo { color: var(--green); font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+.badge { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 11px; color: var(--muted); }
+.badge.live { border-color: var(--green); color: var(--green); }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.nav-btn { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; font-size: 12px; color: var(--muted); cursor: pointer; font-family: 'Courier New', monospace; transition: all .15s; }
+.nav-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.nav-btn.active { background: var(--bg3); border-color: var(--cyan); color: var(--cyan); }
+.section { display: none; }
+.section.active { display: block; }
+.entry-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.entry-tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; letter-spacing: .5px; }
+.tag-cisco { background: #1c2c1c; color: var(--green); border: 1px solid #39d35340; }
+.tag-ipsec { background: #1c2235; color: var(--cyan); border: 1px solid #58a6ff40; }
+.tag-ikev2 { background: #2a1f35; color: var(--purple); border: 1px solid #bc8cff40; }
+.entry-title { color: var(--text-bright); font-size: 16px; font-weight: 700; }
+.entry-subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; margin-bottom: 16px; }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+.card-title { color: var(--amber); font-size: 12px; font-weight: 600; margin-bottom: 10px; letter-spacing: .5px; text-transform: uppercase; }
+.card-title::before { content: '▸ '; }
+pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.8; overflow-x: auto; color: var(--text); white-space: pre; }
+.cmd { color: var(--green); }
+.kw { color: var(--cyan); }
+.val { color: var(--amber); }
+.cmt { color: var(--muted); }
+.warn { color: var(--red); }
+.ok { color: var(--green); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+.gotcha { background: #1c1010; border: 1px solid #f8514940; border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
+.gotcha-label { color: var(--red); font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+.tip { background: #0d1c10; border: 1px solid #39d35340; border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
+.tip-label { color: var(--green); font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+.checklist { list-style: none; }
+.checklist li { padding: 4px 0; display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text); }
+.checklist li::before { content: '□'; color: var(--muted); flex-shrink: 0; }
+.checklist li.done::before { content: '✓'; color: var(--green); }
+.flow-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+.flow-step .num { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--cyan); flex-shrink: 0; margin-top: 2px; }
+.flow-step .step-title { color: var(--text-bright); font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.flow-step .step-desc { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.tab-bar { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; flex-wrap: wrap; }
+.tab { font-size: 11px; padding: 4px 12px; border-radius: 4px 4px 0 0; cursor: pointer; color: var(--muted); border: 1px solid transparent; }
+.tab:hover { color: var(--cyan); }
+.tab.active { color: var(--cyan); border-color: var(--border); border-bottom-color: var(--bg2); background: var(--bg2); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.footer { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: inline-block; }
+.index-link { color: var(--cyan); cursor: pointer; text-decoration: underline; font-size: 12px; }
+svg text { font-family: 'Courier New', monospace; }
+</style>
+</head>
+<body>
+<div class="hub">
+  <div class="topbar">
+    <span class="logo">⬡ NET_HUB</span>
+    <span class="badge live">● live</span>
+    <span class="badge">mirek-techlab</span>
+    <span class="badge">v0.1</span>
+    <span style="margin-left:auto;color:var(--muted);font-size:11px">github.com/mirek-techlab/net-hub</span>
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn active" onclick="showSection('ipsec')">IPsec / IKEv2</button>
+    <button class="nav-btn" onclick="showSection('tshoot')">Troubleshoot</button>
+    <button class="nav-btn" onclick="showSection('mindmap')">Mind Map</button>
+    <button class="nav-btn" onclick="showSection('index')" style="margin-left:auto">📋 Index</button>
+  </div>
+
+  <!-- IPSEC -->
+  <div id="sec-ipsec" class="section active">
+    <div class="entry-header">
+      <span class="entry-tag tag-cisco">CISCO ASA</span>
+      <span class="entry-tag tag-ipsec">IPsec L2L</span>
+      <span class="entry-tag tag-ikev2">IKEv2</span>
+    </div>
+    <div class="entry-title">Changing Peer IP — Site-to-Site VPN</div>
+    <div class="entry-subtitle">ASA — IKEv2 / crypto map / tunnel-group migration</div>
+
+    <div class="tab-bar">
+      <div class="tab active" onclick="showTab(this,'tab-what')">What to change</div>
+      <div class="tab" onclick="showTab(this,'tab-cmds')">Commands</div>
+      <div class="tab" onclick="showTab(this,'tab-verify')">Verify</div>
+    </div>
+
+    <div id="tab-what" class="tab-content active">
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title">Must change</div>
+          <ul class="checklist">
+            <li class="done">crypto map — set peer &lt;NEW_IP&gt;</li>
+            <li class="done">tunnel-group &lt;NEW_IP&gt; — recreate</li>
+            <li class="done">no tunnel-group &lt;OLD_IP&gt;</li>
+            <li class="done">clear crypto ikev2 sa peer &lt;OLD_IP&gt;</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-title">Leave untouched</div>
+          <ul class="checklist">
+            <li class="done">ikev2 policy (global)</li>
+            <li class="done">ikev2 ipsec-proposal (by name)</li>
+            <li class="done">crypto map ACL (match address)</li>
+            <li class="done">PFS / SA lifetime settings</li>
+            <li class="done">crypto map interface binding</li>
+          </ul>
+        </div>
+      </div>
+      <div class="gotcha">
+        <div class="gotcha-label">⚠ GOTCHA — tunnel-group is keyed by peer IP</div>
+        <span style="font-size:12px;color:var(--text)">On ASA, L2L tunnel-group name <span class="warn">IS</span> the peer IP. You cannot rename it — must delete and recreate. Pre-shared keys (type 8) can be pasted as-is from running config.</span>
+      </div>
+      <div class="tip">
+        <div class="tip-label">✓ FAILOVER — always configure on active unit</div>
+        <span style="font-size:12px;color:var(--text)">Changes on <span class="ok">active</span> sync to standby automatically. Never configure directly on standby — breaks sync immediately.</span>
+      </div>
+    </div>
+
+    <div id="tab-cmds" class="tab-content">
+      <div class="card">
+        <div class="card-title">Pre-change audit</div>
+        <pre><span class="cmt"># Find all references to old peer IP</span>
+<span class="cmd">show run crypto map</span>
+<span class="cmd">show run tunnel-group</span> <span class="val">169.51.163.157</span>
+<span class="cmd">show run | i</span> <span class="val">169.51.163.157</span></pre>
+      </div>
+      <div class="card">
+        <div class="card-title">Change sequence</div>
+        <pre><span class="cmt"># 1. Update crypto map peer</span>
+<span class="kw">crypto map</span> IA_map1 11 <span class="kw">set peer</span> <span class="val">&lt;NEW_IP&gt;</span>
+
+<span class="cmt"># 2. Create new tunnel-group</span>
+<span class="kw">tunnel-group</span> <span class="val">&lt;NEW_IP&gt;</span> type ipsec-l2l
+<span class="kw">tunnel-group</span> <span class="val">&lt;NEW_IP&gt;</span> general-attributes
+ default-group-policy GroupPolicy11
+<span class="kw">tunnel-group</span> <span class="val">&lt;NEW_IP&gt;</span> ipsec-attributes
+ ikev2 remote-authentication pre-shared-key 8 <span class="val">&lt;key&gt;</span>
+ ikev2 local-authentication pre-shared-key 8  <span class="val">&lt;key&gt;</span>
+
+<span class="cmt"># 3. Remove old tunnel-group</span>
+<span class="warn">no</span> <span class="kw">tunnel-group</span> <span class="val">169.51.163.157</span>
+
+<span class="cmt"># 4. Clear old SA</span>
+<span class="cmd">clear crypto ikev2 sa peer</span> <span class="val">169.51.163.157</span></pre>
+      </div>
+    </div>
+
+    <div id="tab-verify" class="tab-content">
+      <div class="card">
+        <div class="card-title">Verify tunnel is up</div>
+        <pre><span class="cmd">show crypto ikev2 sa</span>
+<span class="cmt"># Expect: UP-ACTIVE on new peer</span>
+
+<span class="cmd">show crypto ipsec sa peer</span> <span class="val">&lt;NEW_IP&gt;</span>
+<span class="cmt"># Check: encaps/decaps counters incrementing</span>
+
+<span class="cmd">show crypto ikev2 sa detail</span>
+<span class="cmt"># Check: Status = READY, correct local/remote addr</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- TSHOOT -->
+  <div id="sec-tshoot" class="section">
+    <div class="entry-title" style="margin-bottom:14px">Troubleshooting — IKEv2 tunnel not coming up</div>
+    <div class="flow-step"><div class="num">1</div><div><div class="step-title">Check SA state</div><pre style="margin-top:6px"><span class="cmd">show crypto ikev2 sa</span>  <span class="cmt"># MM_WAIT / negotiating / empty?</span></pre></div></div>
+    <div class="flow-step"><div class="num">2</div><div><div class="step-title">Check reachability</div><pre style="margin-top:6px"><span class="cmd">ping</span> <span class="val">&lt;NEW_IP&gt;</span> source &lt;outside-int&gt;  <span class="cmt"># UDP/500 blocked?</span></pre></div></div>
+    <div class="flow-step"><div class="num">3</div><div><div class="step-title">Enable debug</div><pre style="margin-top:6px"><span class="cmd">debug crypto ikev2 protocol 5</span>
+<span class="cmd">debug crypto ikev2 platform 5</span>
+<span class="cmt"># Look for: proposal mismatch, PSK fail, ID mismatch</span></pre></div></div>
+    <div class="flow-step"><div class="num">4</div><div><div class="step-title">Common failures after peer IP change</div>
+      <div class="gotcha" style="margin-top:8px"><div class="gotcha-label">tunnel-group missing or wrong IP</div><span style="font-size:11px">show run tunnel-group — confirm new IP, old is gone</span></div>
+      <div class="gotcha"><div class="gotcha-label">crypto map still pointing old peer</div><span style="font-size:11px">show run crypto map — verify set peer = NEW_IP</span></div>
+      <div class="gotcha"><div class="gotcha-label">ghost SA from old peer</div><span style="font-size:11px">clear crypto ikev2 sa peer &lt;OLD_IP&gt; + clear crypto ipsec sa peer &lt;OLD_IP&gt;</span></div>
+    </div></div>
+    <div class="flow-step"><div class="num">5</div><div><div class="step-title">Always turn off debug when done</div><pre style="margin-top:6px"><span class="warn">no debug all</span>  <span class="cmt"># high CPU risk on production ASA</span></pre></div></div>
+  </div>
+
+  <!-- MINDMAP -->
+  <div id="sec-mindmap" class="section">
+    <div class="entry-title" style="margin-bottom:14px">Mind Map — ASA L2L IKEv2 VPN components</div>
+    <div style="width:100%;overflow-x:auto">
+      <svg width="100%" viewBox="0 0 680 420" role="img">
+        <title>ASA L2L IKEv2 VPN mind map</title>
+        <desc>Relationships between crypto map, tunnel-group, IKEv2 policy and IPsec proposal</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+        <!-- Center -->
+        <rect x="264" y="178" width="154" height="44" rx="8" fill="#1c2235" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="341" y="205" text-anchor="middle" font-size="13" font-weight="700" fill="#58a6ff">ASA L2L IKEv2</text>
+        <!-- Crypto Map -->
+        <rect x="30" y="60" width="140" height="44" rx="6" fill="#161b22" stroke="#39d353" stroke-width="1"/>
+        <text x="100" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="#39d353">crypto map</text>
+        <text x="100" y="97" text-anchor="middle" font-size="10" fill="#8b949e">IA_map1 seq 11</text>
+        <line x1="170" y1="82" x2="264" y2="192" stroke="#39d35360" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="10" y="140" width="110" height="30" rx="4" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="65" y="159" text-anchor="middle" font-size="10" fill="#8b949e">set peer &lt;IP&gt;</text>
+        <line x1="100" y1="104" x2="65" y2="140" stroke="#30363d" stroke-width="0.8"/>
+        <rect x="10" y="180" width="110" height="30" rx="4" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="65" y="199" text-anchor="middle" font-size="10" fill="#8b949e">match address</text>
+        <line x1="100" y1="104" x2="65" y2="180" stroke="#30363d" stroke-width="0.8"/>
+        <rect x="10" y="220" width="110" height="30" rx="4" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="65" y="239" text-anchor="middle" font-size="10" fill="#8b949e">ipsec-proposal</text>
+        <line x1="100" y1="104" x2="65" y2="220" stroke="#30363d" stroke-width="0.8"/>
+        <!-- Tunnel Group -->
+        <rect x="510" y="60" width="145" height="44" rx="6" fill="#161b22" stroke="#bc8cff" stroke-width="1"/>
+        <text x="583" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="#bc8cff">tunnel-group</text>
+        <text x="583" y="97" text-anchor="middle" font-size="10" fill="#8b949e">keyed by peer IP</text>
+        <line x1="510" y1="82" x2="418" y2="192" stroke="#bc8cff60" stroke-width="1" marker-end="url(#arrow)"/>
+        <rect x="525" y="140" width="130" height="30" rx="4" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="590" y="159" text-anchor="middle" font-size="10" fill="#8b949e">PSK (type 8)</text>
+        <line x1="583" y1="104" x2="590" y2="140" stroke="#30363d" stroke-width="0.8"/>
+        <rect x="525" y="180" width="130" height="30" rx="4" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+        <text x="590" y="199" text-anchor="middle" font-size="10" fill="#8b949e">group-policy</text>
+        <line x1="583" y1="104" x2="590" y2="180" stroke="#30363d" stroke-width="0.8"/>
+        <!-- IKEv2 Policy -->
+        <rect x="30" y="310" width="140" height="44" rx="6" fill="#161b22" stroke="#e3b341" stroke-width="1"/>
+        <text x="100" y="332" text-anchor="middle" font-size="12" font-weight="600" fill="#e3b341">ikev2 policy</text>
+        <text x="100" y="347" text-anchor="middle" font-size="10" fill="#8b949e">global — no change</text>
+        <line x1="170" y1="332" x2="264" y2="215" stroke="#e3b34160" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <!-- IPsec Proposal -->
+        <rect x="510" y="310" width="145" height="44" rx="6" fill="#161b22" stroke="#e3b341" stroke-width="1"/>
+        <text x="583" y="332" text-anchor="middle" font-size="12" font-weight="600" fill="#e3b341">ipsec-proposal</text>
+        <text x="583" y="347" text-anchor="middle" font-size="10" fill="#8b949e">aes256-sha256</text>
+        <line x1="510" y1="332" x2="418" y2="215" stroke="#e3b34160" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <!-- Failover -->
+        <rect x="264" y="320" width="154" height="44" rx="6" fill="#161b22" stroke="#f85149" stroke-width="1"/>
+        <text x="341" y="342" text-anchor="middle" font-size="12" font-weight="600" fill="#f85149">failover</text>
+        <text x="341" y="357" text-anchor="middle" font-size="10" fill="#8b949e">active only !</text>
+        <line x1="341" y1="320" x2="341" y2="222" stroke="#f8514960" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <!-- Legend -->
+        <line x1="30" y1="398" x2="60" y2="398" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="66" y="402" font-size="10" fill="#8b949e">required</text>
+        <line x1="160" y1="398" x2="190" y2="398" stroke="#e3b341" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="196" y="402" font-size="10" fill="#8b949e">referenced, no change needed</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- INDEX -->
+  <div id="sec-index" class="section">
+    <div class="entry-title" style="margin-bottom:14px">Knowledge Index</div>
+    <div class="card">
+      <div class="card-title">Entries</div>
+      <ul class="checklist">
+        <li class="done" style="cursor:pointer" onclick="showSection('ipsec')">ASA — IKEv2 L2L peer IP change (Cisco, IPsec, IKEv2)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title">Suggested next topics</div>
+      <ul class="checklist">
+        <li class="done">BGP route filtering &amp; communities</li>
+        <li class="done">VxLAN / EVPN spine-leaf fabric</li>
+        <li class="done">Cisco ACI — EPGs &amp; contracts</li>
+        <li class="done">ASA failover troubleshooting</li>
+        <li class="done">OSPF LSA types cheat-sheet</li>
+      </ul>
+      <div style="margin-top:12px;font-size:11px;color:var(--muted)">Bring any topic to Claude → updated index.html pushed to repo</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span class="dot"></span>
+    <span>NET_HUB — mirek-techlab</span>
+    <span style="margin-left:auto">updated per session</span>
+  </div>
+</div>
+
+<script>
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  const map = {ipsec:0,tshoot:1,mindmap:2,index:3};
+  document.querySelectorAll('.nav-btn')[map[id]]?.classList.add('active');
+}
+function showTab(tab, id) {
+  tab.closest('.section').querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  tab.closest('.section').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  tab.classList.add('active');
+}
+</script>
+</body>
+</html>
