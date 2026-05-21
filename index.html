@@ -695,6 +695,143 @@ function pgF5Certs(){return'<div class="ph"><div class="pt">F5 &mdash; Certifica
 +'</div>'}
 
 // ── RENDERER MAP ─────────────────────────────────────────────
+
+// ── CISCO / ACI / MOQUERY ─────────────────────────────────────
+function pgACImoquery(){return'<div class="ph"><div class="pt">ACI &mdash; moquery</div>'
++'<div class="ps">Managed Object Query &middot; ACI object database &middot; MIT model</div>'
++'<div class="tags">'+tag('tp','Cisco')+tag('tp','ACI')+tag('tb','moquery')+tag('tb','MIT')+'</div></div>'
++'<div class="content">'
++co('t','&#x1F4A1;','Think of moquery as SQL for ACI','You are querying the ACI object database (Management Information Tree) directly. Every policy, endpoint, interface binding, and contract is an object with a Distinguished Name (dn).')
++'<h2>ACI Object Model &mdash; Mental Map</h2>'
++cb('text','Tenant\n└── VRF (Ctx)        routing table / routing domain\n    └── BD           L2/L3 boundary (Bridge Domain)\n        └── EPG      policy group (Endpoint Group)\n            └── Endpoint (CEp)  the actual VM / server / port')
++'<h2>Key Object Abbreviations</h2>'
++tbl(['Prefix / Short','Full Name','Simple Meaning'],[
+['<code>fv</code>','Fabric/Forwarding Virtual','Main policy + networking model namespace'],
+['<code>BD</code>','Bridge Domain','L2/L3 segment — owns a subnet, maps to a VRF'],
+['<code>EPG</code>','Endpoint Group','Policy group — defines what can talk to what'],
+['<code>Ctx</code>','Context','VRF / routing domain'],
+['<code>CEp</code>','Concrete Endpoint','Actual endpoint (MAC + IP + VLAN + node + port)'],
+['<code>Rs</code>','Relationship','Link between objects — e.g. <code>rsctx</code> = BD &rarr; VRF'],
+['<code>dn</code>','Distinguished Name','Full object path — unique ID in MIT'],
+['<code>tDn</code>','Target DN','What a relationship points to'],
+['<code>L3Out</code>','Layer 3 Outside','External routing connection (BGP/OSPF/Static to outside)']])
++'<h2>Basic moquery Syntax</h2>'
++cb('bash','moquery -c <class>                         # query all objects of a class\nmoquery -c <class> -f \'<class>.<attr>=="<val>"\'  # filter by attribute\nmoquery -c <class> | egrep \'field1|field2\'      # grep specific fields')
++'<h2>Common Class Queries</h2>'
++tbl(['Command','Returns'],[
+['<code>moquery -c fvTenant</code>','All tenants'],
+['<code>moquery -c fvBD</code>','All Bridge Domains'],
+['<code>moquery -c fvAEPg</code>','All EPGs (Application EPGs)'],
+['<code>moquery -c fvCtx</code>','All VRFs'],
+['<code>moquery -c fvCEp</code>','All concrete endpoints (MAC+IP+VLAN+port)'],
+['<code>moquery -c l3extSubnet</code>','All external subnets (L3Out)'],
+['<code>moquery -c fvRsCtx</code>','BD &rarr; VRF relationships'],
+['<code>moquery -c fvRsPathAtt</code>','EPG &rarr; interface/port bindings']])
++'<h2>Practical Query Examples</h2>'
++'<h3>Find a BD and its VRF</h3>'
++cb('bash','moquery -c fvBD | egrep \'name|dn|ctx\'\n\n# Specific BD\nmoquery -c fvBD -f \'fv.BD.name=="IBR_IR-IBR_ID2-IBR-IR-pHMC_BD"\'\n\n# BD name + VRF (tnFvCtxName)\nmoquery -c fvBD | egrep -A 10 \'IBR_IR-IBR_ID2-IBR-IR-pHMC_BD\' | egrep \'name|tnFvCtxName\'')
++'<h3>Verify BD &rarr; VRF relationship</h3>'
++cb('bash','moquery -c fvRsCtx -f \'fv.RsCtx.dn=="uni/tn-IBR/BD-IBR_IR-IBR_ID2-IBR-IR-pHMC_BD/rsctx"\'')
++cb('log','# Output:\ndn           : uni/tn-IBR/BD-IBR_IR-IBR_ID2-IBR-IR-pHMC_BD/rsctx\nstate        : formed\ntDn          : uni/tn-IBR/ctx-IBR_IR-IBR_VRF\ntnFvCtxName  : IBR_IR-IBR_VRF    # <-- this is the VRF name')
++'<h3>Find endpoint by IP</h3>'
++cb('bash','moquery -c fvCEp | grep -E \'10.132.173.50\'\n\n# All fields for that endpoint\nmoquery -c fvCEp | grep -A 20 \'10.132.173.50\'\n\n# By MAC\nmoquery -c fvCEp | grep -A 20 \'50:EB:1A:B5:36:18\'')
++'<h3>Find endpoints in a VLAN</h3>'
++cb('bash','moquery -c fvCEp -f \'fv.CEp.encap=="vlan-66"\' | egrep \'ip|mac|dn\'')
++'<h3>Find endpoint on specific node/interface</h3>'
++cb('bash','moquery -c fvIfConn | grep dn | grep node-1226 | grep eth1/1')
++'<h3>Find which L3Out external subnet covers an IP</h3>'
++cb('bash','moquery -c l3extSubnet | grep 10.176.205.0')
++'<h2>grep / egrep Patterns Reference</h2>'
++tbl(['Pattern','Finds'],[
+['<code>egrep \'ctx|tnFvCtxName\'</code>','VRF mapping (BD &rarr; VRF)'],
+['<code>egrep \'BD-|fvBD\'</code>','Bridge Domains'],
+['<code>egrep \'epg-|fvAEPg\'</code>','EPGs'],
+['<code>egrep \'cep-|ip|mac\'</code>','Concrete endpoints'],
+['<code>egrep \'rsctx\'</code>','BD &rarr; VRF relationship'],
+['<code>egrep \'rsBDToOut\'</code>','BD &rarr; L3Out relationship'],
+['<code>egrep \'rscons\'</code>','Consumer contract relationships'],
+['<code>egrep \'rsprov\'</code>','Provider contract relationships']])
++cb('bash','# grep flags reminder\n-A 10   show 10 lines AFTER match\n-B  5   show 5 lines BEFORE match\n-C  5   show 5 lines both directions')
++co('t','&#x1F4A1;','3 questions to never get lost','1. <strong>What object am I looking for?</strong> (&mdash;c class) &nbsp; 2. <strong>What is it connected to?</strong> (Rs relationship) &nbsp; 3. <strong>What is the name/path?</strong> (dn)')
++'</div>'}
+
+// ── CISCO / ACI / TSHOOT ─────────────────────────────────────
+function pgACItshoot(){return'<div class="ph"><div class="pt">ACI &mdash; Troubleshooting</div>'
++'<div class="ps">Endpoint discovery &middot; EPG/interface verification &middot; external EPG vs L3Out</div>'
++'<div class="tags">'+tag('tp','Cisco')+tag('tp','ACI')+tag('ta','Tshoot')+tag('tb','EPG')+tag('tb','L3Out')+'</div></div>'
++'<div class="content">'
++'<h2>Endpoint Discovery</h2>'
++cb('bash','# Find endpoint by IP\nshow endpoints ip 10.176.205.216\n\n# Find endpoints in a VLAN\nshow endpoints vlan 3184\n\n# Ping sweep to populate ARP / endpoint table\nfor i in {1..254}; do ping -c1 -W1 10.132.173.$i & done\n\n# Find endpoint via moquery (APIC)\nmoquery -c fvCEp | grep -E \'10.132.173\'\nmoquery -c fvCEp | grep -A 20 \'AA:BB:CC:DD:EE:FF\'')
++co('t','&#x1F4A1;','Endpoint output explained','Node = leaf switch ID, Interface = physical port, Encap = VLAN, Tenant/App/AEPg = policy path')
++'<h2>EPG Detail &amp; Interface Binding</h2>'
++cb('bash','# Show all endpoints in an EPG\nshow epg GH2_Main_EP-GH2-Amdin-Server1_635_EPG detail\n\n# Show interface config on a leaf\nshow run leaf 1203 interface eth 1/2\n\n# Show what VLANs/EPGs are trunked on an interface\nfabric 1203 show interface eth1/2\n\n# Show policy group on a leaf interface\nshow running-config template policy-group P_L1203_2_IntPG')
++'<h2>VRF &amp; Routing on Fabric Nodes</h2>'
++cb('bash','# Route table for a VRF on a leaf/spine\nfabric 2284 show ip route vrf GH2_Main_VRF\n\n# List all VRFs on a node\nfabric 2284 show vrf\n\n# Check interface on specific leaf\nfabric 1203 show interface eth1/2')
++'<h2>External EPG vs L3Out &mdash; Key Concept</h2>'
++co('p','&#x1F9E0;','External EPG is for policy, L3Out is for routing','The L3Out handles routing regardless of how many external EPGs exist. External EPGs are used purely for policy enforcement (contracts + subnet classification). One L3Out can have multiple ExtEPGs &mdash; routes on BorderLeafs are the same for all of them.')
++cb('bash','# Find which ExtEPG an external subnet belongs to\nshow external-l3 epg name CVG_Main_WAN_L3OutEPG\n\n# Show all ExtEPGs in a tenant/VRF\nshow external-l3 epg tenant CVG vrf CVG_Main_VRF\nshow external-l3 epg tenant CVG vrf CVG_Main_VRF detail\n\n# moquery equivalent (APIC)\nmoquery -c l3extSubnet | grep 10.x.x.x')
++'<h2>Contract Troubleshooting</h2>'
++cb('bash','# List contracts for a tenant\nsh tenant GH2 contract\n\n# Via moquery\nmoquery -c fvRsCons | grep <EPG_name>   # consumer side\nmoquery -c fvRsProv | grep <EPG_name>   # provider side')
++tbl(['Domain type','Purpose'],[
+['Internal (bare / VMM)','Connects EPGs to internal compute (bare metal, VMware, etc.)'],
+['External (L2/L3)','Connects EPGs to outside networks via L2Out or L3Out']])
++'<h2>APIC Sandbox (Lab)</h2>'
++cb('text','URL  : https://sandboxapicdc.cisco.com/\nUser : admin\nNote : DevNet free sandbox — use for moquery practice')
++'</div>'}
+
+// ── CISCO / IOS XR / ROUTING ──────────────────────────────────
+function pgIosXRrouting(){return'<div class="ph"><div class="pt">IOS XR &mdash; Routing</div>'
++'<div class="ps">Static routes in VRF &middot; BGP VRF &middot; dual-DC config pattern</div>'
++'<div class="tags">'+tag('tp','Cisco')+tag('tp','IOS XR')+tag('tb','Routing')+tag('tb','BGP')+tag('tb','VRF')+'</div></div>'
++'<div class="content">'
++'<h2>Static Route in VRF</h2>'
++cb('IOS XR','# Config mode\nrouter static\n vrf GSNI-RD0\n  address-family ipv4 unicast\n   158.87.69.0/24 Bundle-Ether13.1031 100.96.196.10 description Systal_OSR\n   !\n\n# One-liner equivalent\nrouter static vrf GSNI-RD0 address-family ipv4 unicast 158.87.69.0/24 Bundle-Ether13.1031 100.96.196.10 description Systal_OSR')
++co('t','&#x1F4A1;','Static route anatomy','<code>&lt;prefix&gt; &lt;next-hop-interface&gt; &lt;next-hop-ip&gt; description &lt;text&gt;</code> &mdash; interface + IP together = recursive static, avoids ARP issues on point-to-point links.')
++'<h2>Dual-DC Config Pattern (DCS / DCO)</h2>'
++co('p','&#x1F4AC;','DCS = primary DC, DCO = secondary DC','Both sides are configured independently with their own Bundle-Ether subinterface and next-hop IP. Same prefix, different exit points.')
++cb('IOS XR','# DCS (primary DC) router\nrouter static vrf GSNI-RD0 address-family ipv4 unicast\n 158.87.69.0/24 Bundle-Ether13.1031 100.96.196.10 description Systal_OSR\n\n# DCO (secondary DC) router\nrouter static vrf GSNI-RD0 address-family ipv4 unicast\n 158.87.69.0/24 Bundle-Ether13.1032 100.96.196.18 description Systal_OSR')
++'<h2>Verify &amp; Show Commands</h2>'
++cb('IOS XR','# Show current static routes in VRF\nshow running-config router static vrf GSNI-RD0\n\n# Routing table for VRF\nshow route vrf GSNI-RD0\nshow route vrf GSNI-RD0 158.87.69.0/24\n\n# Test reachability within VRF\nping vrf GSNI-RD0 100.96.196.10\ntraceroute vrf GSNI-RD0 158.87.69.1')
++'<h2>BGP VRF Commands</h2>'
++cb('IOS XR','# BGP summary for a VRF (neighbor states, prefix counts)\nshow bgp vrf GSNI-RD0 summary\n\n# Routes received from specific neighbor\nshow bgp vrf GSNI-RD0 neighbors 100.96.196.246 routes\n\n# Routes being advertised to a neighbor\nshow bgp vrf GSNI-RD0 neighbors 100.96.129.1 advertised-routes\n\n# Specific prefix detail\nshow bgp vrf GSNI-RD0 ipv4 unicast 158.87.69.0/24\n\n# Check if prefix exists in BGP table\nshow bgp vrf GSNI-RD0 | include 158.87.69')
++'<h2>show commit Changes</h2>'
++cb('IOS XR','# Review uncommitted changes before applying\nshow commit changes diff\n\n# Commit with label\ncommit label \"static-route-Systal_OSR\"\n\n# Rollback if needed\nrollback configuration last 1')
++co('a','&#x26A0;&#xFE0F;','IOS XR commit model','Changes are staged and NOT active until committed. Always review with <code>show commit changes diff</code> before committing in production.')
++'<h2>Common Troubleshooting Flow</h2>'
++tbl(['Step','Command','Purpose'],[
+['1','<code>show route vrf &lt;vrf&gt; &lt;prefix&gt;</code>','Is the route in the RIB?'],
+['2','<code>show bgp vrf &lt;vrf&gt; &lt;prefix&gt;</code>','Is it in BGP table? Best path selected?'],
+['3','<code>ping vrf &lt;vrf&gt; &lt;next-hop&gt;</code>','Is the next-hop reachable?'],
+['4','<code>show bgp vrf &lt;vrf&gt; neighbors &lt;ip&gt; routes</code>','What is the neighbor sending?'],
+['5','<code>show interfaces Bundle-Ether13.1031</code>','Is the exit interface up?']])
++'</div>'}
+
+// ── CISCO / ACI / THEORY ──────────────────────────────────────
+function pgACItheory(){return'<div class="ph"><div class="pt">ACI &mdash; Theory</div>'
++'<div class="ps">Architecture concepts &middot; policy model &middot; key constructs</div>'
++'<div class="tags">'+tag('tp','Cisco')+tag('tp','ACI')+tag('tb','Theory')+tag('tb','Policy Model')+'</div></div>'
++'<div class="content">'
++'<h2>ACI Policy Model</h2>'
++cb('text','APIC (controller)\n└── Tenant                      administrative boundary\n    ├── VRF (Ctx)               routing table / L3 domain\n    │   └── BD (Bridge Domain)  L2 domain + optional L3 gateway\n    │       └── EPG             policy group (not a VLAN!)\n    │           └── Endpoints   VMs / servers / ports\n    ├── Application Profile     logical grouping of EPGs\n    ├── Contracts               allow/deny between EPGs\n    └── L3Out                   external routing (BGP/OSPF/static)')
++co('t','&#x1F4A1;','EPG is NOT a VLAN','EPG is a policy construct. A VLAN is just the encapsulation used to reach the EPG on a specific port. The same EPG can use different VLANs on different leaves.')
++'<h2>Key Constructs</h2>'
++tbl(['Construct','Layer','Purpose'],[
+['Tenant','Admin','Isolation boundary — separate customers / environments'],
+['VRF (Ctx)','L3','Routing domain — separate IP spaces'],
+['Bridge Domain','L2/L3','L2 flood domain + optional anycast gateway IP'],
+['EPG','Policy','Group of endpoints with same policy — consumes/provides contracts'],
+['Contract','Policy','Permit/deny rule between EPGs (like a firewall rule)'],
+['L3Out','External','Connect ACI fabric to external routers via BGP/OSPF/static'],
+['External EPG (ExtEPG)','Policy','Classify external subnets for policy — NOT for routing']])
++'<h2>Contracts &mdash; Provider / Consumer</h2>'
++cb('text','Consumer EPG ──[contract]──► Provider EPG\n\nExample:\n  Web-EPG (consumer) ──[http-contract]──► App-EPG (provider)\n  App-EPG (consumer) ──[db-contract]────► DB-EPG  (provider)')
++co('a','&#x26A0;&#xFE0F;','Default deny','Without a contract between EPGs, traffic is DENIED by default even within the same BD/VRF. This is the fundamental difference from traditional networking.')
++'<h2>L3Out vs External EPG</h2>'
++tbl(['Component','Handles','Key point'],[
+['L3Out','Routing','Advertises/receives routes to/from external. Routing works regardless of ExtEPG count.'],
+['External EPG','Policy','Contract enforcement for external subnets. Select "external subnets for the external EPG" flag.']])
++'</div>'}
+
 const RENDERERS={
   'cisco/vpn/setup':pgVPNSetup,
   'cisco/vpn/debug':pgVPNDebug,
@@ -705,6 +842,11 @@ const RENDERERS={
   'f5/ltm/cli':pgF5CLI,
   'f5/logs/ltm':pgF5Logs,
   'f5/logs/certs':pgF5Certs,
+  'cisco/aci/moquery':pgACImoquery,
+  'cisco/aci/tshoot':pgACItshoot,
+  'cisco/aci/theory':pgACItheory,
+  'cisco/iosxe/routing':pgIosXRrouting,
+
 };
 
 // ── GLOBAL MIND MAP ───────────────────────────────────────────
