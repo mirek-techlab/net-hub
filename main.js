@@ -102,14 +102,13 @@ class AppController {
     /**
      * Render initial view on app load
      */
-    renderInitialView() {
-        // Show home by default
-        if (!window.location.hash) {
-            window.location.hash = "#home";
-        } else {
-            this.onHashChange();
-        }
+   renderInitialView() {
+    if (!window.location.hash) {
+        window.location.hash = "#home";
     }
+    // Always call renderView on init
+    this.renderView();
+}
 
     /**
      * Main view renderer - calls appropriate content renderer
