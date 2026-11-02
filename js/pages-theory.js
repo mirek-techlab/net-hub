@@ -173,7 +173,7 @@ diagnose debug enable
     + '<p style="color:var(--text2)">Real incident, anonymised. The partner changed their side without telling us; the tunnel became intermittent and their logs showed the message above.</p>'
     + '<div class="flow">'
     + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">What they did</div><p>Switched their gateway to IKEv2 on their own, turned on aggressive mode, changed identity settings &mdash; and defined the traffic selectors <strong>per host (/32)</strong>, while our side protects whole networks (/16 and similar). When it did not come up, they switched back to IKEv1 &mdash; but kept much of the IKEv2 configuration (proposals, identity type, timers). The result was a mix that neither matched the old agreement nor a clean IKEv2 setup.</p>'
-    + co('r', '&#x1F3AF;', 'Root cause found', 'Their Palo Alto IKE gateway was left on <strong>"auto"</strong>, and in this setup it <strong>initiated IKEv1 in Aggressive Mode</strong> first (their own log proves it). Our gateway does not permit Aggressive Mode &rarr; the packets were dropped &rarr; timeout. Nothing was wrong or changed on our side.')
+    + co('r', '&#x1F3AF;', 'Root cause: three things on the partner side at once', '<strong>1)</strong> IKE gateway left on <strong>"auto"</strong> after an unfinished IKEv2 attempt &mdash; it initiated IKEv1 <strong>Aggressive Mode</strong> (their own log) and leftover IKEv2 negotiations failed; our gateway drops Aggressive Mode. <strong>2)</strong> <strong>Traffic selectors</strong> did not mirror ours (host /32 entries vs our subnets) &rarr; traffic put into the wrong SA. <strong>3)</strong> <strong>DPD every 5 s</strong> &rarr; dead-peer declared on short hiccups &rarr; tunnel torn down and rebuilt. Nothing was wrong or changed on our side.')
     + '</div></div>'
     + '<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">What it looked like</div>'
     + tbl(['Symptom', 'Explanation'], [
@@ -190,10 +190,11 @@ diagnose debug enable
 2. partner falls back to IKEv1 AGGRESSIVE mode        -> our ASA drops it immediately (aggressive mode disabled)
                                                          = their log: "failed as initiator, aggressive mode … cookie …:0000 … timeout"
 3. IKEv1 eventually negotiates                         -> tunnel UP, traffic works for a while
-4. next rekey initiated by the partner (or a new tunnel  -> partner again tries AGGRESSIVE mode -> dropped
-   after idle time), DPD event, host vs subnet SAs        -> SA collapses for a few minutes
+4. DPD (5 s) declares the peer dead on a short hiccup  -> SAs deleted, "Lost Service"
+   or traffic hits the wrong (host /32) SA              -> dropped (%ASA-4-402116)
+   rebuild attempts start with AGGRESSIVE mode / IKEv2  -> dropped / retransmissions, minutes of outage
 5. back to step 1`)
-    + co('p', '&#x1F4A1;', 'Why always the partner re-initiates (likely, verify)', 'The side with the <strong>shorter lifetime</strong> starts every rekey. Palo Alto\'s default IKE lifetime is 8 hours, an ASA IKEv1 policy defaults to 24 hours &mdash; so the Palo Alto rekeys first, every time, with its broken mode. Roughly 8 hours between the morning and the afternoon drop fits that. Compare <code>show crypto ikev1 sa detail</code> / <code>show crypto ipsec sa</code> lifetimes with the drop times.')
+    + co('p', '&#x2139;&#xFE0F;', 'Lifetimes were not the trigger', 'Both sides had phase 1 = 24 h and phase 2 = 8 h. The drops matched <strong>DPD loss</strong> timestamps in the ASA log instead (see the log timeline below). Always check the timers against real log times before blaming them.')
     + '<p>Every "it works again" was just step 3 &mdash; nothing had been fixed. The pattern only becomes visible when you line up <strong>tunnel up/down times</strong> with <strong>rekey lifetimes</strong> and the partner\'s change attempts.</p>'
     + '</div></div>'
     + '<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">How to recognise version / mode mismatch in debug</div>'
@@ -212,6 +213,47 @@ diagnose debug enable
       ['it works when the agreed parameters are used', 'a successful SA from the same peer when your side initiates (or from the time before their change)'],
       ['timeline', 'first failure time vs. their change window &mdash; ask them for their change log'],
     ])
+    + '<h3>The ASA log of one outage</h3>'
+    + cb('ASA syslog (UTC)', `11:00:42  %ASA-5-713120: Group = 203.0.113.104, PHASE 2 COMPLETED
+11:01:41  %ASA-4-750003: Local:203.0.113.90:500 Remote:203.0.113.104:500
+          IKEv2 Negotiation aborted due to ERROR: Maximum number of retransmissions reached   <- leftover IKEv2 attempts
+11:03:38  %ASA-6-302016: Teardown UDP connection … 203.0.113.104/500 to 203.0.113.90/500
+12:58:56  %ASA-3-713123: Group = 203.0.113.104, IKE lost contact with remote peer,
+          deleting connection (keepalive type: DPD)                                         <- DPD loss
+12:58:57  %ASA-6-602304: IPSEC: An outbound LAN-to-LAN SA (SPI= 0x…) … has been deleted.
+12:58:57  %ASA-6-602304: IPSEC: An inbound LAN-to-LAN SA (SPI= 0x…) … has been deleted.
+12:58:57  %ASA-5-713259: Session is being torn down. Reason: Lost Service
+12:59:32  %ASA-6-713172: Automatic NAT Detection Status: Remote end IS behind a NAT device
+12:59:32  %ASA-6-713905: Floating NAT-T to port 4500                                         <- rebuilt 35 s later`)
+    + tbl(['Message', 'Meaning'], [
+      ['<code>713123 … lost contact … (keepalive type: DPD)</code>', 'our side sent DPD and got no answer &rarr; declares the peer dead and deletes everything'],
+      ['<code>602304 … SA has been deleted</code>, <code>713259 … Lost Service</code>', 'consequence of the DPD loss; the partner only sees "SA delete received from peer" and restarts'],
+      ['<code>750003 … IKEv2 … maximum number of retransmissions</code>', 'IKEv2 negotiations between peers configured for IKEv1 &mdash; leftovers of the attempted migration'],
+      ['<code>713172</code> / <code>713905</code>', 'new IKE SA: NAT detected on their side, NAT-T on UDP 4500 &mdash; tunnel back'],
+    ])
+    + '<h3>Traffic in the wrong SA: %ASA-4-402116</h3>'
+    + cb('ASA syslog', `%ASA-4-402116: IPSEC: Received an ESP packet (SPI= 0xC06BBCE9) from 203.0.113.104 to 203.0.113.90.
+The decapsulated inner packet doesn't match the negotiated policy in the SA.
+The packet specifies its destination as 10.200.65.2, its source as 10.30.154.64, and its protocol as udp.
+The SA specifies its local proxy as 198.51.100.151/255.255.255.255/ip/0
+and its remote proxy as 10.200.66.6/255.255.255.255/ip/0.`)
+    + '<p>The partner encrypted a packet between two <strong>subnets</strong> (10.30.x &harr; 10.200.65.x) into the <strong>host-to-host</strong> SA. The ASA checks every decrypted packet against the SA proxies and drops it. This message is proof of a <strong>selector mismatch on the sending side</strong>. Our selectors for reference: local 198.51.100.144/28 + 10.30.0.0/16, remote 10.200.64.0/22.</p>'
+    + '<h3>What to request from the partner (Palo Alto)</h3>'
+    + cb('request', `Please check the logs around the exact DPD loss timestamps (UTC):
+  - <date> 08:59:56Z
+  - <date> 12:58:47Z
+We need to know whether the gateway received DPD/IKE packets from our peer and whether it replied.
+Please provide:
+  - ikemgr.log around those timestamps
+  - IKE / IPsec SA lifetime values
+  - DPD settings
+  - tunnel monitor settings
+  - NAT-T settings
+  - IKE gateway version / exchange mode
+  - whether any IKEv2 rekey/migration attempt happens at those times
+  - whether the IKE daemon, dataplane or HA/path monitoring had any event at those times
+  - routing / policy-based forwarding for the VPN traffic and the proxy-IDs (traffic selectors)`)
+    + co('a', '&#x26A0;&#xFE0F;', 'Trust the logs, not the description', 'The partner\'s answer was "IKE mode auto &mdash; accepts both, but initiates in main" while their own log said <em>aggressive mode</em> as initiator. When a statement contradicts a log line, ask for the log, not for another statement.')
     + '<h3>The commands that settled it (ASA)</h3>'
     + cb('Cisco ASA', `capture VA match ip any host 10.30.68.5          # during the outage: "Capturing - 0 bytes" = no traffic in the tunnel
 show capture VA
@@ -225,7 +267,7 @@ show vpn-sessiondb l2l filter ipaddress 203.0.113.104
 show clock                                         # compare with Login Time
 
 show crypto ipsec sa peer 203.0.113.104 | include ident|pkts|settings
-  local ident  (10.30.0.0/255.255.0.0)   remote ident (192.0.2.64/255.255.252.0)
+  local ident  (10.30.0.0/255.255.0.0)   remote ident (10.200.64.0/255.255.252.0)
   #pkts encaps: 142271  #pkts decaps: 82780        <- both directions counting
   in use settings ={L2L, Tunnel, NAT-T-Encaps, PFS Group 5, IKEv1, }`)
     + co('t', '&#x1F50E;', 'Login Time is the key evidence', '<code>Login Time</code> / <code>Duration</code> in <code>show vpn-sessiondb</code> tell you exactly when the tunnel was last (re)established. If that matches the outage and your change log is empty, the tunnel went down and was rebuilt &mdash; without anyone touching your side.')
@@ -241,6 +283,7 @@ Mode - hence the timeout and the log you see. No changes are required on our sid
 Recommended: switch the gateway to IKEv2, which is already supported and configured
 on our side for this peer.
 Alternatively, if IKEv1 must be kept, set the IKE mode explicitly to Main Mode.`)
+    + '<p>Follow-up hint sent: align the traffic selectors with our crypto ACL (one entry per our ACL line, no /32 shortcuts) and the timers with our policy (IKEv1: AES, SHA, DH 5, lifetime 86400) &mdash; or, better, do the IKEv2 migration jointly under a proper change request.</p>'
     + '<p>The partner set <strong>Main Mode</strong> and adjusted <strong>DPD</strong>; the VPN has been stable since. They still could not say what triggered it &mdash; a joint IKEv2 migration is to be planned.</p>'
     + co('a', '&#x26A0;&#xFE0F;', 'DPD mismatch alone can drop tunnels', 'Very aggressive DPD on one side (short interval, few retries) tears the SA down on a short packet loss, while the other side still uses it &rarr; one-way traffic until the next rekey. Compare DPD interval / retries on both sides (ASA: <code>isakmp keepalive threshold … retry …</code> in the tunnel-group).')
     + '</div></div>'
@@ -248,7 +291,7 @@ Alternatively, if IKEv1 must be kept, set the IKE mode explicitly to Main Mode.`
     + '<ul style="margin:0 0 6px 20px"><li>Agree <strong>one</strong> parameter set in writing and have both sides fill it: IKE version, mode, auth (PSK/cert), local + remote IKE ID (type and value), public IPs (after NAT), phase 1 and 2 proposals, lifetimes, DPD, NAT-T, PFS, protected subnets.</li>'
     + '<li>Ask the partner for their <strong>current running config</strong> of the tunnel (sanitised), not their intention.</li>'
     + '<li>Never leave mode/version on <strong>auto</strong> for a site-to-site peer &mdash; set exactly what was agreed (version, Main Mode, proposals).</li>'
-    + '<li>Align <strong>lifetimes</strong> (or at least know which side rekeys first) and DPD settings.</li>'
+    + '<li>Keep <strong>DPD</strong> reasonable on both sides (seconds-level DPD turns every short hiccup into a full teardown) and align lifetimes.</li>'
     + '<li>Take the chance to retire weak parameters: this tunnel still ran IKEv1 + AES128/SHA1 + DH group 5 &mdash; target IKEv2, AES-GCM, DH 19/20.</li>'
     + '<li>An IKE version migration is a <strong>synchronised event</strong>, not a one-sided experiment: agreed window, both sides online, same new parameter set, rollback plan &mdash; and leftovers of the other version removed completely.</li></ul>'
     + '</div></div>'
@@ -256,12 +299,12 @@ Alternatively, if IKEv1 must be kept, set the IKE mode explicitly to Main Mode.`
     + '<h2>Reading ASA phase 2 rekey logs</h2>'
     + '<p>Example from the same case (addresses replaced). The ASA rekeys a Child-SA and immediately sends a delete &mdash; is the new SA being killed?</p>'
     + cb('ASA syslog', `%ASA-5-713041: Group = 203.0.113.104, IKE Initiator: Rekeying Phase 2...
-               local Proxy Address 198.51.100.151, remote Proxy Address 192.0.2.6
+               local Proxy Address 198.51.100.151, remote Proxy Address 10.200.66.6
 %ASA-5-713049: Security negotiation complete for LAN-to-LAN Group (203.0.113.104)
                Initiator, Inbound SPI = 0xcbb6bcc5, Outbound SPI = 0xd7c2638d      <- the NEW SA
 %ASA-5-713120: PHASE 2 COMPLETED (msgid=3fcc2f05)
 %ASA-7-715046: constructing IPSec delete payload
-%ASA-7-715009: IKE Deleting SA: Remote Proxy 192.0.2.6, Local Proxy 198.51.100.151
+%ASA-7-715009: IKE Deleting SA: Remote Proxy 10.200.66.6, Local Proxy 198.51.100.151
                … delete confirmation references SPI 0x8b43a57b                     <- an OLD SPI`)
     + tbl(['Check', 'Conclusion'], [
       ['SPI in the delete = one of the <strong>new</strong> SPIs', 'the new SA is being torn down &rarr; real problem (policy/selector mismatch, peer rejects)'],
@@ -292,7 +335,9 @@ IDX.push(
   { t: 'ASA phase 2 rekey delete: old vs new SPI', p: 'theory/security/ike-nat', k: 'asa 713041 713049 713120 715009 rekey phase 2 delete spi old sa cleanup host-to-host proxy id selector palo alto', v: 'Delete with an old SPI = normal cleanup' },
   { t: 'Host /32 vs subnet /16 selectors (narrowing)', p: 'theory/security/ike-nat', k: 'traffic selector narrowing rfc 7296 proxy id subset host /32 /16 crypto acl mirror ikev2', v: 'Mismatched selectors → host SAs, rekey collisions' },
   { t: 'show vpn-sessiondb Login Time as evidence', p: 'theory/security/ike-nat', k: 'show vpn-sessiondb l2l filter ipaddress login time duration tunnel rebuilt evidence asa capture 0 bytes', v: 'When the tunnel was last (re)established' },
-  { t: 'Palo Alto IKE gateway auto -> aggressive mode', p: 'theory/security/ike-nat', k: 'palo alto ike gateway auto exchange mode aggressive main ikev2 lifetime 8 hours rekey', v: 'Set Main Mode / IKEv2 explicitly' },
+  { t: 'Palo Alto IKE gateway auto -> aggressive mode', p: 'theory/security/ike-nat', k: 'palo alto ike gateway auto exchange mode aggressive main ikev2 dpd ikemgr', v: 'Set Main Mode / IKEv2 explicitly' },
+  { t: '%ASA-4-402116 packet does not match SA policy', p: 'theory/security/ike-nat', k: '402116 decapsulated inner packet doesn\'t match negotiated policy proxy selector mismatch wrong sa', v: 'Peer put traffic into the wrong SA' },
+  { t: 'ASA DPD loss: 713123 lost contact, 713259 lost service', p: 'theory/security/ike-nat', k: '713123 lost contact remote peer dpd keepalive 602304 713259 lost service 750003 ikev2 retransmissions', v: 'DPD declared peer dead → teardown → rebuild' },
   { t: 'DPD mismatch drops tunnels', p: 'theory/security/ike-nat', k: 'dpd dead peer detection keepalive threshold retry mismatch one-way', v: 'Compare DPD on both sides' },
   { t: 'NAT-T UDP 500 -> 4500', p: 'theory/security/ike-nat', k: 'nat-t udp 4500 500 nat detection ipsec', v: 'First packet always UDP 500' },
 );
