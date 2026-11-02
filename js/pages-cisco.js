@@ -415,3 +415,92 @@ IDX.push(
   { t: 'ECC double-bit error (EZMAN / QFP)', p: 'cisco/iosxe/asr-crash', k: 'ecc double bit single bit ezman_client np5c qfp exmem sigabrt rc=134', v: 'Uncorrectable memory error → process abort → reload' },
   { t: 'Read dmesg: convert timestamps, NIC reset', p: 'cisco/iosxe/asr-crash', k: 'dmesg timestamp seconds since boot epoch netdev watchdog igb reset adapter transmit queue timed out', v: 'date -u -d @$((boot + s))' },
 );
+
+// ═══════════════════════════════════════════════════════════════════
+// NX-OS — interface discards & queuing (Nexus 7000-style templates)
+// ═══════════════════════════════════════════════════════════════════
+(function () {
+  const cisco = TREE.find(t => t.id === 'cisco');
+  if (!cisco.subs.some(s => s.id === 'nxos')) cisco.subs.push({ id: 'nxos', label: 'Nexus / NX-OS', pages: [{ id: 'discards', label: 'Discards & queuing' }] });
+})();
+
+function pgNXDiscards() {
+  return '<div class="ph"><div class="pt">NX-OS &mdash; interface discards &amp; queuing</div>'
+    + '<div class="ps">Where packets are dropped on a Nexus port-channel uplink, how to read the queuing statistics and when the numbers actually matter</div>'
+    + '<div class="tags">' + tag('tp', 'Cisco') + tag('tp', 'Nexus') + tag('tp', 'NX-OS') + tag('tb', 'QoS') + tag('ta', 'Port-channel') + '</div></div>'
+    + '<div class="content">'
+    + '<p>Example: a VRF uplink to a WAN router over <code>port-channel10</code> = 2 &times; 10G (<code>Eth1/11</code>, <code>Eth2/11</code>, on two line cards). Queuing templates <code>4q8e</code> / <code>1p3q1t-8e</code> / <code>2q4t-8e</code> are Nexus 7000/7700 style.</p>'
+
+    + '<h2>1. Error counters</h2>'
+    + cb('NX-OS', `show interface port-channel 10 counters errors
+show interface ethernet 1/11 counters errors`)
+    + cb('output (shortened)', `Port   Align-Err FCS-Err Xmit-Err Rcv-Err UnderSize OutDiscards
+Po10           0       1        0       1         0      885730
+Port   InDiscards
+Po10       583075
+
+Eth1/11 OutDiscards 809169   InDiscards 298657`)
+    + tbl(['Counter', 'Meaning'], [
+      ['FCS / Align / Symbol errors', 'physical layer: optics, cable, patch panel &mdash; should be 0 and not growing'],
+      ['<code>InDiscards</code>', 'received fine but dropped on ingress (ingress queue full, policing, internal congestion)'],
+      ['<code>OutDiscards</code>', 'dropped on egress; if the egress <em>queues</em> show 0 drops, look elsewhere (ACL / policy, fabric / internal path)'],
+    ])
+
+    + '<h2>2. Queuing statistics</h2>'
+    + cb('NX-OS', `show queuing interface ethernet 1/11          # template, queues, CoS mapping
+show policy-map interface ethernet 1/11       # per-queue transmit / drop counters
+show policy-map interface ethernet 1/11 | include dropped`)
+    + cb('output (shortened)', `Service-policy (queuing) input:   default-4q-8e-in-policy
+  Class-map (queuing): 2q4t-8e-in-q1        (CoS 5-7)  queue dropped pkts : 0
+  Class-map (queuing): 2q4t-8e-in-q-default (CoS 0-4)  queue dropped pkts : 583075   <- = Po10 InDiscards
+                                                        queue transmit pkts: 14473935313548
+Service-policy (queuing) output:  default-4q-8e-out-policy
+  1p3q1t-8e-out-pq1 (priority, CoS 5-7)   dropped 0
+  1p3q1t-8e-out-q2  (CoS 3-4)             dropped 0
+  1p3q1t-8e-out-q3  (CoS 2)               dropped 0
+  1p3q1t-8e-out-q-default (CoS 0-1)       dropped 0`)
+    + tbl(['Finding', 'Reading'], [
+      ['ingress default queue drops = <code>InDiscards</code>', 'drops happen on <strong>ingress</strong>, best-effort traffic &mdash; typical for short bursts filling the ingress buffer'],
+      ['all egress queues 0 drops, but <code>OutDiscards</code> &gt; 0', 'egress discards are not caused by the queuing policy'],
+      ['583 075 drops against ~14 &times; 10<sup>12</sup> packets', '&asymp; 0.000004 % over the whole lifetime &mdash; negligible as an average'],
+      ['identical numbers for both members', 'statistics shared for the port-channel / module &mdash; do not attribute them to one link; use per-interface counters'],
+    ])
+    + co('a', '&#x26A0;&#xFE0F;', '"Last clearing … never"', 'Lifetime counters say nothing about <em>now</em>. Clear them, then measure the <strong>increase</strong> during normal load and during the reported problem.')
+    + cb('NX-OS', `clear counters interface port-channel 10
+clear qos statistics
+! … wait / reproduce …
+show interface port-channel 10 counters errors
+show policy-map interface ethernet 1/11 | include dropped
+show interface ethernet 1/11 | include rate|discard`)
+
+    + '<h2>3. Port-channel load balancing</h2>'
+    + cb('NX-OS', `show port-channel traffic
+show port-channel load-balance`)
+    + cb('output (shortened)', `ChanId  Port     Rx-Ucst  Tx-Ucst
+10      Eth1/11  33.46%   52.25%
+10      Eth2/11  66.53%   47.74%
+
+IP: src-dst ip rotate 0`)
+    + tbl(['Observation', 'Meaning'], [
+      ['Tx balanced (52/48)', 'our hash (<code>src-dst ip</code>) spreads well'],
+      ['Rx 33/67', 'the <strong>neighbour</strong> decides which member it sends on &mdash; its hash, not ours'],
+      ['few large flows between few IP pairs', 'IP-only hashing cannot spread them; including L4 ports helps: <code>port-channel load-balance src-dst ip-l4port</code> (on the sending side)'],
+    ])
+    + co('p', '&#x2139;&#xFE0F;', 'Note', '<code>show port-channel traffic</code> shows shares since the member counters were last cleared &mdash; clear them for a current picture.')
+
+    + '<h2>4. SVI counters</h2>'
+    + cb('NX-OS', `show interface vlan 552`)
+    + cb('output (shortened)', `Vlan552 is up, line protocol is up
+  Internet Address is 100.96.144.130/26
+  60 seconds input rate 77176 bits/sec, 66 packets/sec
+  L3 Switched: input: 14455066563 pkts - output: 1993816313 pkts`)
+    + '<p>Good for a quick rate check of one VRF/VLAN on the uplink; the physical drops are on the member interfaces, not on the SVI.</p>'
+    + '</div>';
+}
+
+RENDERERS['cisco/nxos/discards'] = pgNXDiscards;
+IDX.push(
+  { t: 'NX-OS InDiscards / OutDiscards on port-channel', p: 'cisco/nxos/discards', k: 'nexus nx-os indiscards outdiscards counters errors port-channel discards drops', v: 'Ingress queue drops vs egress discards' },
+  { t: 'NX-OS queuing: show policy-map interface dropped', p: 'cisco/nxos/discards', k: 'nexus 7000 4q8e 1p3q1t 2q4t queuing policy-map interface queue dropped cos', v: 'Read per-queue drops; clear and measure the increase' },
+  { t: 'Port-channel load balance src-dst ip-l4port', p: 'cisco/nxos/discards', k: 'show port-channel traffic load-balance src-dst ip l4port hash imbalance rx tx', v: 'Rx imbalance is the neighbour hash' },
+);
