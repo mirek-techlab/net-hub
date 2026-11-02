@@ -118,7 +118,7 @@ function render(route) {
   CUR = route || 'home';
   if (!['home', 'mm', 'ai'].includes(CUR)) LAST_PAGE = CUR;
   if (findRoute(CUR).tech) { const pp = CUR.split('/'); OPEN_T.add(pp[0]); if (pp.length > 2) OPEN_S.add(pp[0] + '/' + pp[1]) }
-  document.body.classList.remove('nav-open');
+  document.body.classList.remove('nav-open', 'mm-full-open');
   closeSrch();
   buildSidebar(); buildBC();
   const pc = document.getElementById('pc');
@@ -454,8 +454,27 @@ function pgMM() {
     + '<div class="mm-wrap"><svg id="mm-svg" class="mm-svg"></svg>' + zoomBtns('mm-svg') + '</div>';
 }
 function zoomBtns(id) {
-  return '<div class="mm-zoom"><button onclick="mmZoom(\'' + id + '\',0.8)" title="Zoom in">+</button><button onclick="mmZoom(\'' + id + '\',1.25)" title="Zoom out">&minus;</button><button onclick="mmZoom(\'' + id + '\',0)" title="Fit">&#x26F6;</button></div>';
+  return '<div class="mm-zoom">'
+    + '<button onclick="mmFull(\'' + id + '\',this)" title="Expand to full window (Esc to close)">&#x26F6;</button>'
+    + '<button onclick="mmZoom(\'' + id + '\',0.8)" title="Zoom in">+</button>'
+    + '<button onclick="mmZoom(\'' + id + '\',1.25)" title="Zoom out">&minus;</button>'
+    + '<button onclick="mmZoom(\'' + id + '\',0)" title="Reset view">&#x27F2;</button></div>';
 }
+// Expand a map over the whole window (and back).
+function mmFull(id, btn) {
+  const wrap = document.getElementById(id).closest('.mm-wrap');
+  const on = !wrap.classList.contains('full');
+  wrap.classList.toggle('full', on);
+  document.body.classList.toggle('mm-full-open', on);
+  const b = btn || wrap.querySelector('.mm-zoom button');
+  b.innerHTML = on ? '&#x2715;' : '&#x26F6;';
+  b.title = on ? 'Close full window (Esc)' : 'Expand to full window (Esc to close)';
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const w = document.querySelector('.mm-wrap.full');
+  if (w) mmFull(w.querySelector('svg').id);
+});
 function mkEl(tagName, attrs) { const e = document.createElementNS('http://www.w3.org/2000/svg', tagName); for (const k in attrs || {}) e.setAttribute(k, attrs[k]); return e }
 const MM = {}; // per-svg view state
 

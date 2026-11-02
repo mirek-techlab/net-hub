@@ -222,6 +222,11 @@ mark{background:rgba(0,191,160,.25);color:inherit;border-radius:2px}
 .edit-zone.drop{outline:2px dashed var(--teal);outline-offset:6px;border-radius:4px}
 .sr3.sel{background:var(--bg3)}
 .content a,.co-b a{color:var(--teal)}
+/* full-window map */
+.mm-wrap.full{position:fixed;inset:0;z-index:150;background:var(--bg)}
+.mm-wrap.full .mm-svg{height:100vh;min-height:0;border:none;border-radius:0}
+.mm-wrap.full .mm-zoom{right:20px;bottom:20px}
+body.mm-full-open{overflow:hidden}
 /* ── MOBILE ────────────────────────────────────────────────── */
 #menu-btn{display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:15px;padding:1px 8px;cursor:pointer}
 @media (max-width:760px){
