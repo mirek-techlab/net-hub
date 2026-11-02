@@ -177,9 +177,18 @@ diagnose debug enable
     + tbl(['Symptom', 'Explanation'], [
       ['phase 1 timeout as initiator, responder cookie 0', 'our side did not accept their packets (version / mode / ID did not match any config) &rarr; no reply'],
       ['their private IP in the log', 'IP-type identity sent from behind NAT'],
-      ['intermittent', 'sometimes our side initiated with the old (working) parameters, sometimes they did with the new ones; rekeys failed depending on who started'],
+      ['intermittent', 'a repeating cycle &mdash; see below'],
       ['no useful network documentation', 'their IP mapping list did not show the NAT or the change'],
     ])
+    + '<h3>The cycle that made it "intermittent"</h3>'
+    + cb('sequence', `1. partner tries IKEv2 (host /32 selectors)          -> does not come up
+2. partner falls back to IKEv1 AGGRESSIVE mode        -> our ASA drops it immediately (aggressive mode disabled)
+                                                         = their log: "failed as initiator, aggressive mode … cookie …:0000 … timeout"
+3. IKEv1 eventually negotiates                         -> tunnel UP, traffic works for a while
+4. next phase 2 rekey / DPD event with the leftover    -> SA collapses (host vs subnet SAs, DPD tears it down)
+   IKEv2-era parameters
+5. back to step 1`)
+    + '<p>Every "it works again" was just step 3 &mdash; nothing had been fixed. The pattern only becomes visible when you line up <strong>tunnel up/down times</strong> with <strong>rekey lifetimes</strong> and the partner\'s change attempts.</p>'
     + '</div></div>'
     + '<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">How to recognise version / mode mismatch in debug</div>'
     + tbl(['Seen', 'Meaning'], [
