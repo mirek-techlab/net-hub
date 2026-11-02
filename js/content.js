@@ -143,120 +143,7 @@ function pgASADebug(){return'<div class="ph"><div class="pt">ASA Firewall &mdash
 ['7','Debugging','Verbose &mdash; enable carefully']])
 +'</div>'}
 
-function pgF5LTM(){return'<div class="ph"><div class="pt">F5 LTM &mdash; Provisioning Workflow</div>'
-+'<div class="ps">Nodes &rarr; Pools &rarr; Virtual Servers &rarr; Persistence &rarr; Verify</div>'
-+'<div class="tags">'+tag('tg','F5')+tag('tg','LTM')+tag('ta','Route Domain')+'</div></div>'
-+'<div class="content">'
-+co('t','&#x1F4A1;','Pool-first','Create and verify the pool before building VS &mdash; can pre-create independently.')
-+co('a','&#x26A0;&#xFE0F;','Route Domain notation','<code>10.234.8.21%10</code> = IP in route domain 10. Verify correct RD for the client subnet.')
-+'<h2>Provisioning Flow</h2><div class="flow">'
-+'<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">Check existing Nodes</div>'
-+cb('tmsh','tmsh list /ltm node\ntmsh show /ltm node <node-name>')
-+'</div></div>'
-+'<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">Create Health Monitor</div>'
-+cb('tmsh','ltm monitor https VL557_Customer_API {\n    destination *:9711\n    send "GET /common/v1.0/de/customer/details HTTP/1.1\\r\\nHost: 10.234.8.211\\r\\nConnection: close\\r\\n\\r\\n"\n    receive "HTTP/1.1 400"\n    interval 5\n    timeout 16\n    server-name 10.234.8.211\n}')
-+'</div></div>'
-+'<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">Create Pool</div>'
-+tbl(['Field','Value','Notes'],[
-['Name','<code>Intranet-&lt;ServiceName&gt;</code>','Match VS naming'],
-['Health Monitor','Custom or gateway_icmp','HTTPS for APIs'],
-['LB Method','Least Connections (member)','Default for most services'],
-['Members','Real server IP:port','Add each real server']])
-+cb('tmsh','ltm pool Intranet-CustomerService {\n    load-balancing-mode least-connections-member\n    monitor VL557_Customer_API\n    members {\n        10.234.2.6:9711 { address 10.234.2.6 }\n        10.234.2.7:9711 { address 10.234.2.7 }\n    }\n}')
-+'</div></div>'
-+'<div class="fs"><div class="fsn">4</div><div class="fsb"><div class="fst">Create Virtual Server</div>'
-+tbl(['Field','Value','Notes'],[
-['Name','<code>Intranet-&lt;ServiceName&gt;</code>','Match pool name'],
-['Destination','<code>&lt;VIP&gt;%&lt;RD&gt;</code>','e.g. 10.234.8.21%10'],
-['Default Pool','Pool from step 3','Required'],
-['iRule','<code>*snat-&lt;VLAN-ID&gt;</code>','VLAN ID of client subnet'],
-['Persistence','source_addr','Sticky sessions'],
-['Traffic Group','Intranet (Floating)','REQUIRED for intranet VIPs']])
-+co('r','&#x26A0;&#xFE0F;','Traffic Group','Intranet VIPs MUST use "Intranet (Floating)" traffic group. Wrong group = VIP does not float on failover!')
-+'</div></div>'
-+'<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Verify</div>'
-+cb('tmsh','tmsh show /ltm virtual Intranet-CustomerService\ntmsh show /ltm pool Intranet-CustomerService members\nshow /sys log ltm range now-1h\nbash rdsh 10   # enter route domain for testing')
-+'</div></div></div>'
-+'<h2>HTTP Response Codes for Monitors</h2>'
-+tbl(['Code','Meaning','Monitor use'],[
-['200','OK','Ideal but not required'],
-['400','Bad Request (missing params)','Valid &mdash; backend alive, validation failing'],
-['404','Not Found','Valid &mdash; server up, URI wrong'],
-['405','Method Not Allowed','Valid &mdash; HEAD on POST-only endpoint']])
-+'</div>'}
-
-function pgF5Mon(){return'<div class="ph"><div class="pt">F5 HTTPS Monitors &mdash; Cheat Sheet</div>'
-+'<div class="ps">Build, test, and troubleshoot HTTPS health monitors for Jetty API backends</div>'
-+'<div class="tags">'+tag('tg','F5')+tag('tg','Monitor')+tag('tg','HTTPS')+tag('tb','Jetty')+tag('ta','SNI')+'</div></div>'
-+'<div class="content">'
-+'<h2>Manual Testing Flow</h2><div class="flow">'
-+'<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">Test TCP</div>'+cb('bash','telnet 10.234.2.6 9701\nnc -zv 10.234.2.6 9701')+'</div></div>'
-+'<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">Test TLS handshake</div>'+cb('bash','openssl s_client -connect 10.234.2.6:9701\nopenssl s_client -connect 10.234.8.21:9711 -servername 10.234.8.211')+'</div></div>'
-+'<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">Send HTTP over TLS</div>'
-+cb('bash','(echo -e "GET /common/v1.0/de/customer/details HTTP/1.1\\r\\nHost: 10.234.8.211\\r\\nConnection: close\\r\\n\\r\\n"; sleep 1) \\\n| openssl s_client -connect 10.234.8.21:9711 -quiet')
-+co('a','&#x26A0;&#xFE0F;','No extra spaces &mdash; Jetty is strict!','GET&nbsp;&nbsp;/path (double space) &rarr; 400 Illegal character SPACE. Exactly one space.')
-+'</div></div>'
-+'<div class="fs"><div class="fsn">4</div><div class="fsb"><div class="fst">Observe response &rarr; choose receive string</div>'
-+cb('HTTP response','HTTP/1.1 400 Bad Request\n{"errorMessage":"Account Number Cannot be Empty"}')
-+'<p style="color:var(--text2);font-size:13px">400 = validation (missing params) &mdash; backend alive. Use <code>"HTTP/1.1 400"</code> as receive string.</p>'
-+'</div></div></div>'
-+'<h2>Monitor Templates</h2><h3>Customer API &mdash; port 9711</h3>'
-+cb('tmsh','ltm monitor https VL557_Customer_API {\n    destination *:9711\n    send "GET /common/v1.0/de/customer/details HTTP/1.1\\r\\nHost: 10.234.8.211\\r\\nConnection: close\\r\\n\\r\\n"\n    receive "HTTP/1.1 400"\n    interval 5\n    timeout 16\n    server-name 10.234.8.211\n}')
-+'<h3>Order API &mdash; port 9701</h3>'
-+cb('tmsh','ltm monitor https VL557_Order_API {\n    destination *:9701\n    send "POST /common/v1.0/de/order HTTP/1.1\\r\\nHost: 10.234.8.211\\r\\nConnection: close\\r\\n\\r\\n"\n    receive "HTTP/1.1 400"\n    interval 5\n    timeout 16\n    server-name 10.234.8.211\n}')
-+'<h2>Troubleshooting</h2>'
-+tbl(['Symptom','Cause','Fix'],[
-['400 Illegal character SPACE','Double space in send string','One space between method and URI'],
-['Connection reset','Wrong port / firewall / route domain','Test TCP with telnet; check RD'],
-['TLS handshake fails','Missing SNI / self-signed cert','Add server-name; test with -servername'],
-['Monitor yellow','Receive string not in response','Test manually with openssl; check exact string']])
-+'</div>'}
-
-function pgF5CLI(){return'<div class="ph"><div class="pt">F5 LTM &mdash; CLI Reference</div>'
-+'<div class="ps">tmsh commands &middot; bash helpers &middot; log navigation</div>'
-+'<div class="tags">'+tag('tg','F5')+tag('tg','tmsh')+tag('tb','CLI')+'</div></div>'
-+'<div class="content">'
-+'<h2>tmsh Quick Reference</h2>'
-+cb('tmsh','# Virtual servers\ntmsh list /ltm virtual\ntmsh show /ltm virtual <name>\ntmsh show /ltm virtual <name> stats\n\n# Pools & members\ntmsh list /ltm pool\ntmsh show /ltm pool <name> members\n\n# Nodes\ntmsh show /ltm node\n\n# Monitors\ntmsh list /ltm monitor https\n\n# iRules & SNAT\ntmsh list /ltm rule\ntmsh list /ltm snat\n\n# Persistence table\ntmsh show /ltm persistence persist-records\n\n# Save config\ntmsh save /sys config')
-+'<h2>bash Helpers</h2>'
-+cb('bash','bash rdsh 10            # enter route domain 10\ntail -f /var/log/ltm    # live log\ngrep <pattern> /var/log/ltm\nzcat ltm.2.gz ltm.3.gz ltm.4.gz | grep <pattern>')
-+'</div>'}
-
-function pgF5Logs(){return'<div class="ph"><div class="pt">F5 &mdash; LTM Log Analysis</div>'
-+'<div class="ps">Monitor events &middot; log commands &middot; compressed log search</div>'
-+'<div class="tags">'+tag('tg','F5')+tag('ta','Logs')+tag('ta','Debug')+'</div></div>'
-+'<div class="content">'
-+'<h2>Log Commands</h2>'
-+cb('tmsh','show /sys log ltm range now-4d\nshow /sys log ltm range now-1h\nshow /sys log ltm range now-24h')
-+cb('bash','grep <hostname> /var/log/ltm\ntail -f /var/log/ltm | grep <pattern>\nzcat ltm.2.gz ltm.3.gz ltm.4.gz ltm.5.gz | grep dehensvm02')
-+'<h2>Monitor Event Examples</h2>'
-+cb('log output','# DOWN event (01070638)\nDec 12 00:44:14 ic8v-f5lb notice mcpd[5266]: 01070638:5:\nPool /Common/Intranet-VERTEX-PROD_80\nmember /Common/Intranet-dehensvm024:8099 monitor status down.\n[ last error: Response Code: 200 ]\n[ was up for 266hrs:45mins:44sec ]\n\n# UP event (01070727)\nDec 12 00:47:48 ic8v-f5lb notice mcpd[5266]: 01070727:5:\nPool /Common/Intranet-VERTEX-PROD_80\nmember /Common/Intranet-dehensvm024:8099 monitor status up.\n[ was down for 0hr:3mins:34sec ]')
-+tbl(['Event ID','Event','Action'],[
-['01070638','Member DOWN','Check last error; inspect backend'],
-['01070727','Member UP','Recovered; watch for flapping'],
-['200 in DOWN event','Receive string not matching','Test manually with openssl; check receive string']])
-+co('a','&#x26A0;&#xFE0F;','200 response in a DOWN event?','Monitor gets 200 but member is DOWN = receive string not in response body. Test with openssl s_client to see actual response.')
-+'<h2>Log Locations</h2>'
-+tbl(['File','Content'],[
-['/var/log/ltm','Current &mdash; live'],
-['/var/log/ltm.1 .. ltm.7','Rotated plain text'],
-['/var/log/ltm.1.gz .. ltm.7.gz','Compressed &mdash; use zcat'],
-['/var/log/audit','Config change log']])
-+'</div>'}
-
-function pgF5Certs(){return'<div class="ph"><div class="pt">F5 &mdash; Certificate Inspection</div>'
-+'<div class="ps">TLS cert management &middot; expiry checks &middot; ClientSSL profiles</div>'
-+'<div class="tags">'+tag('tg','F5')+tag('tb','TLS')+tag('tb','Certificates')+'</div></div>'
-+'<div class="content">'
-+'<h2>Inspect All Certs in Filestore</h2>'
-+cb('bash','find /config/filestore/files_d/*_d/certificate_d -name "*_*" \\\n  | egrep -v \'bundle|default|irule\' \\\n  | xargs -i openssl x509 -in {} -text -noout -inform pem 2>&- \\\n  | awk \'/Issuer:/,/Not After :/ {print $0}\'')
-+cb('text','Issuer: CN=DigiCert Global G2 TLS RSA SHA256 2020 CA1\nValidity\n    Not Before: May  9 00:00:00 2024 GMT\n    Not After : May 13 23:59:59 2025 GMT   <-- EXPIRED!\n\nIssuer: CN=Kyndryl Certificate Authority DC1-T1\nValidity\n    Not Before: Oct 15 00:00:00 2025 GMT\n    Not After : Oct 14 23:59:59 2026 GMT   <-- OK')
-+co('a','&#x26A0;&#xFE0F;','Check expiry proactively','An expired cert causes immediate TLS failures for all users of that VS &mdash; no advance warning.')
-+'<h2>List ClientSSL Profiles per VS</h2>'
-+cb('bash','tmsh show /ltm virtual profiles | egrep \'Ltm::Virtual Server:|Ltm::ClientSSL Profile:\'')
-+'<h2>Cert Management</h2>'
-+cb('tmsh','tmsh list /sys crypto cert\ntmsh list /sys crypto key\ntmsh install /sys crypto cert <name> from-local-file <path>\ntmsh modify /ltm profile client-ssl <profile> cert <cert> key <key>')
-+'</div>'}
+// F5 pages live in js/pages-f5.js
 
 // ── RENDERER MAP ─────────────────────────────────────────────
 const RENDERERS={
@@ -264,10 +151,5 @@ const RENDERERS={
   'cisco/vpn/debug':pgVPNDebug,
   'cisco/vpn/theory':pgVPNTheory,
   'cisco/asa/debug':pgASADebug,
-  'f5/ltm/workflow':pgF5LTM,
-  'f5/ltm/monitors':pgF5Mon,
-  'f5/ltm/cli':pgF5CLI,
-  'f5/logs/ltm':pgF5Logs,
-  'f5/logs/certs':pgF5Certs,
 };
 

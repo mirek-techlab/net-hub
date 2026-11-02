@@ -26,7 +26,9 @@ Static site — no server, no build step. Open `index.html` or publish with GitH
 
 ```
 index.html        page layout + styles
-js/content.js     technology tree, built-in reference pages, search keywords
+js/content.js     technology tree, older built-in pages (Cisco ASA/VPN), search keywords
+js/pages-*.js     built-in reference pages per vendor (cisco, fortinet, f5, f5 cases & CVEs, theory, testing tools, cases)
+tools/            helper scripts, e.g. f5-test-members.sh (test pool members from the BIG-IP)
 js/app.js         navigation, editor, .txt import, custom pages, search, mind map, backup
 js/ai.js          AI assistant (Claude API, called directly from the browser)
 net-hub.html      redirect to index.html (old address)
@@ -34,5 +36,5 @@ legacy/           old Python sketch — not used by the site
 ```
 
 ### Adding built-in reference pages
-Add a page to `TREE` and a renderer function to `RENDERERS` in `js/content.js`
+Add a page to `TREE` and a renderer function to `RENDERERS` (see `js/pages-*.js`)
 (see `pgF5Mon` for an example using the `cb()` code-block, `co()` callout and `tbl()` table helpers).
