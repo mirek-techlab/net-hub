@@ -44,20 +44,20 @@ function pageHasContent(route) { return !!RENDERERS[route] || hasUserData(route)
 function buildSidebar() {
   let html = '';
   TREE.forEach(tech => {
-    const isOT = OPEN_T.has(tech.id) || CUR === tech.id || CUR.startsWith(tech.id + '/');
+    const isOT = OPEN_T.has(tech.id);
     const nPages = tech.subs.reduce((a, s) => a + s.pages.length, 0);
     html += '<div style="--guide:' + tech.col + '40">';
     html += '<div class="tr-row t1h ' + (CUR === tech.id || CUR.startsWith(tech.id + '/') ? 'page-active' : '') + '" onclick="tTog(\'' + tech.id + '\')">'
-      + '<span class="chev ' + (isOT ? 'open' : '') + '">&#9654;</span>'
+      + '<span class="chev ' + (isOT ? 'open' : '') + '" onclick="event.stopPropagation();tFold(\'' + tech.id + '\')" title="Expand / collapse">&#9654;</span>'
       + '<span class="t1-dot" style="background:' + tech.col + '"></span>'
       + '<span class="lbl">' + tech.label + '</span><span class="cnt">' + nPages + '</span></div>';
     if (isOT) {
       html += '<div class="t1-kids">';
       tech.subs.forEach(sub => {
         const sk = tech.id + '/' + sub.id;
-        const isOS = OPEN_S.has(sk) || CUR.startsWith(sk + '/');
+        const isOS = OPEN_S.has(sk);
         html += '<div class="tr-row t2h ' + (CUR === sk || CUR.startsWith(sk + '/') ? 'page-active' : '') + '" onclick="sTog(\'' + sk + '\')">'
-          + '<span class="chev ' + (isOS ? 'open' : '') + '">&#9654;</span>'
+          + '<span class="chev ' + (isOS ? 'open' : '') + '" onclick="event.stopPropagation();sFold(\'' + sk + '\')" title="Expand / collapse">&#9654;</span>'
           + '<span class="lbl">' + sub.label + '</span></div>';
         if (isOS) {
           html += '<div class="t2-kids">';
@@ -76,7 +76,10 @@ function buildSidebar() {
   document.getElementById('nav-tree').innerHTML = html;
   ['home', 'mm', 'ai'].forEach(id => { const el = document.getElementById('qn-' + id); if (el) el.classList.toggle('active', CUR === id) });
 }
-// Clicking a technology or sub-topic both expands it and opens its overview page.
+// Chevron = expand/collapse only. Label = open the overview page (and expand);
+// clicking the label of the overview you are already on collapses it.
+function tFold(tid) { OPEN_T.has(tid) ? OPEN_T.delete(tid) : OPEN_T.add(tid); buildSidebar() }
+function sFold(key) { OPEN_S.has(key) ? OPEN_S.delete(key) : OPEN_S.add(key); buildSidebar() }
 function tTog(tid) {
   if (CUR === tid && OPEN_T.has(tid)) { OPEN_T.delete(tid); buildSidebar(); return }
   OPEN_T.add(tid); go(tid);
@@ -114,8 +117,8 @@ function render(route) {
   flushSave();
   CUR = route || 'home';
   if (!['home', 'mm', 'ai'].includes(CUR)) LAST_PAGE = CUR;
-  if (CUR.includes('/')) { OPEN_T.add(CUR.split('/')[0]); if (CUR.split('/').length > 2) OPEN_S.add(CUR.split('/').slice(0, 2).join('/')) }
-  document.body.classList.remove('nav-open');
+  if (findRoute(CUR).tech) { const pp = CUR.split('/'); OPEN_T.add(pp[0]); if (pp.length > 2) OPEN_S.add(pp[0] + '/' + pp[1]) }
+  document.body.classList.remove('nav-open', 'mm-full-open');
   closeSrch();
   buildSidebar(); buildBC();
   const pc = document.getElementById('pc');
@@ -451,8 +454,27 @@ function pgMM() {
     + '<div class="mm-wrap"><svg id="mm-svg" class="mm-svg"></svg>' + zoomBtns('mm-svg') + '</div>';
 }
 function zoomBtns(id) {
-  return '<div class="mm-zoom"><button onclick="mmZoom(\'' + id + '\',0.8)" title="Zoom in">+</button><button onclick="mmZoom(\'' + id + '\',1.25)" title="Zoom out">&minus;</button><button onclick="mmZoom(\'' + id + '\',0)" title="Fit">&#x26F6;</button></div>';
+  return '<div class="mm-zoom">'
+    + '<button onclick="mmFull(\'' + id + '\',this)" title="Expand to full window (Esc to close)">&#x26F6;</button>'
+    + '<button onclick="mmZoom(\'' + id + '\',0.8)" title="Zoom in">+</button>'
+    + '<button onclick="mmZoom(\'' + id + '\',1.25)" title="Zoom out">&minus;</button>'
+    + '<button onclick="mmZoom(\'' + id + '\',0)" title="Reset view">&#x27F2;</button></div>';
 }
+// Expand a map over the whole window (and back).
+function mmFull(id, btn) {
+  const wrap = document.getElementById(id).closest('.mm-wrap');
+  const on = !wrap.classList.contains('full');
+  wrap.classList.toggle('full', on);
+  document.body.classList.toggle('mm-full-open', on);
+  const b = btn || wrap.querySelector('.mm-zoom button');
+  b.innerHTML = on ? '&#x2715;' : '&#x26F6;';
+  b.title = on ? 'Close full window (Esc)' : 'Expand to full window (Esc to close)';
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const w = document.querySelector('.mm-wrap.full');
+  if (w) mmFull(w.querySelector('svg').id);
+});
 function mkEl(tagName, attrs) { const e = document.createElementNS('http://www.w3.org/2000/svg', tagName); for (const k in attrs || {}) e.setAttribute(k, attrs[k]); return e }
 const MM = {}; // per-svg view state
 

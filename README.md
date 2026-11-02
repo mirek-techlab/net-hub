@@ -32,7 +32,6 @@ tools/            helper scripts, e.g. f5-test-members.sh (test pool members fro
 js/app.js         navigation, editor, .txt import, custom pages, search, mind map, backup
 js/ai.js          AI assistant (Claude API, called directly from the browser)
 net-hub.html      redirect to index.html (old address)
-legacy/           old Python sketch — not used by the site
 ```
 
 ### Adding built-in reference pages
