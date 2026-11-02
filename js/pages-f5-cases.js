@@ -137,7 +137,7 @@ save sys config                          # auto-sync pushes it to the peer`)
     + tbl(['What', 'Command', 'Expected'], [
       ['Members', '<code>show ltm pool /Internal/websphere-apppreview_accp_internal_https_pool members</code>', 'both available'],
       ['VS', '<code>show ltm virtual /Internal/websphere-apppreview_accp_internal_https_vs</code>', 'available'],
-      ['SAN on the new VIP', '<code>rdexec 1 openssl s_client -connect &lt;NEW_VIP&gt;:443 -servername accapppreview.corp.local &lt;/dev/null 2&gt;/dev/null | openssl x509 -noout -ext subjectAltName</code>', 'all 5 SANs'],
+      ['SAN on the new VIP', '<code>rdexec 1 openssl s_client -connect &lt;NEW_VIP&gt;:443 -servername accapppreview.corp.local &lt;/dev/null 2&gt;/dev/null | openssl x509 -noout -ext subjectAltName</code>', 'all 5 SANs (older openssl: <code>-text | grep -A1 "Subject Alternative"</code>)'],
       ['Application', '<code>rdexec 1 curl -vk https://&lt;NEW_VIP&gt;/ -H "Host: accapppreview.corp.local"</code>', 'application answers'],
       ['Existing app', '<code>show ltm virtual /Internal/websphere-app_*</code> + openssl on the old VIP', 'UP, new certificate'],
       ['Client', 'functional test by the customer', 'confirmed'],
