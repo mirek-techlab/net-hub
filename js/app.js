@@ -386,6 +386,9 @@ function pageText(route) {
 let SEARCH_DOCS = null;
 function buildSearchDocs() {
   const docs = IDX.map(r => ({ p: r.p, t: r.t, hay: (r.t + ' ' + r.k + ' ' + r.v).toLowerCase(), v: r.v, kind: 'topic' }));
+  // commands come only from the registry (js/commands.js) — no manual list
+  if (typeof CMDS !== 'undefined') CMDS.forEach(c => docs.push({ p: c.page, t: c.cmd, hay: (c.cmd + ' ' + c.d + ' ' + c.k + ' ' + c.tags.join(' ') + ' command').toLowerCase(), v: c.d + ' — ' + routeLabel(c.page), kind: 'cmd' }));
+  if (typeof eduSearchDocs === 'function') docs.push(...eduSearchDocs());
   allPages().forEach(({ route, tech, sub, page }) => {
     docs.push({ p: route, t: page.label + ' — ' + sub.label, hay: (tech.label + ' ' + sub.label + ' ' + page.label).toLowerCase(), v: tech.label + ' › ' + sub.label, kind: 'page' });
     if (RENDERERS[route]) { const txt = htmlToText(RENDERERS[route]()); docs.push({ p: route, t: page.label + ' (content)', hay: txt.toLowerCase(), raw: txt, kind: 'text' }) }
@@ -428,15 +431,15 @@ function doSrch(q) {
   const seen = new Set(), res = [];
   [...SEARCH_DOCS, ...noteDocs()].forEach(d => {
     if (!words.every(w => d.hay.includes(w))) return;
-    const key = d.p + '|' + d.kind; if (seen.has(key)) return; seen.add(key);
+    const key = d.p + '|' + d.kind + (d.kind === 'cmd' || d.kind === 'topic' ? '|' + d.t : ''); if (seen.has(key)) return; seen.add(key);
     let snip = d.v || '';
     if (d.raw) { const i = d.raw.toLowerCase().indexOf(words[0]); snip = (i > 30 ? '…' : '') + d.raw.slice(Math.max(0, i - 30), i + 90).replace(/\s+/g, ' ') }
-    const score = (d.t.toLowerCase().includes(Q) ? 0 : 1) + ({ topic: 0, page: 0, note: 1, text: 2 }[d.kind]);
+    const score = (d.t.toLowerCase().includes(Q) ? 0 : 1) + ({ topic: 0, cmd: 0, page: 0, note: 1, text: 2 }[d.kind]);
     res.push({ d, snip, score });
   });
   res.sort((a, b) => a.score - b.score);
   if (!res.length) { el.innerHTML = '<div class="se">No results</div>'; return }
-  el.innerHTML = res.slice(0, 15).map(({ d, snip }) => '<div class="sr3" onclick="closeSrch();go(\'' + d.p + '\')"><div class="srl">' + esc(d.p) + '</div><div class="srp">' + hl(esc(d.t), Q) + '</div><div class="srv">' + hl(esc(snip), words[0]) + '</div></div>').join('');
+  el.innerHTML = res.slice(0, 15).map(({ d, snip }) => '<div class="sr3" onclick="closeSrch();go(\'' + d.p + '\')"><div class="srl">' + (d.kind === 'cmd' ? '&#x2318; command &middot; ' : '') + esc(d.p) + '</div><div class="srp">' + hl(esc(d.t), Q) + '</div><div class="srv">' + hl(esc(snip), words[0]) + '</div></div>').join('');
 }
 function hl(t, q) { const i = t.toLowerCase().indexOf(q.toLowerCase()); if (i < 0 || !q) return t; return t.slice(0, i) + '<mark>' + t.slice(i, i + q.length) + '</mark>' + t.slice(i + q.length) }
 document.addEventListener('keydown', e => {
@@ -448,8 +451,9 @@ document.addEventListener('keydown', e => {
 function pgMM() {
   return '<div class="ph"><div class="pt">Knowledge Mind Map</div><div class="ps">Generated from your technologies, topics and pages &middot; drag to pan &middot; scroll / pinch to zoom &middot; click a node to open it</div></div>'
     + '<div class="mm-tools"><span>Technology</span><select id="mm-f" onchange="initMM(\'mm-svg\',this.value||null)"><option value="">All</option>'
-    + TREE.map(t => '<option value="' + t.id + '">' + t.label + '</option>').join('') + '</select>'
+    + TREE.filter(t => t.id !== 'cheat').map(t => '<option value="' + t.id + '">' + t.label + '</option>').join('') + '</select>'
     + '<label><input type="checkbox" id="mm-only" onchange="initMM(\'mm-svg\',document.getElementById(\'mm-f\').value||null)"> only pages with content</label>'
+    + '<label title="Show the commands from the registry under the pages where they are used"><input type="checkbox" id="mm-cmds" onchange="initMM(\'mm-svg\',document.getElementById(\'mm-f\').value||null)"> show commands</label>'
     + '<div class="mm-legend"><span><i style="background:var(--teal)"></i>built-in</span><span><i style="background:var(--amber)"></i>your notes</span><span><i style="border:1px solid var(--text3)"></i>empty</span></div></div>'
     + '<div class="mm-wrap"><svg id="mm-svg" class="mm-svg"></svg>' + zoomBtns('mm-svg') + '</div>';
 }
@@ -481,11 +485,12 @@ const MM = {}; // per-svg view state
 function initMM(svgId, techFilter) {
   const svg = document.getElementById(svgId); if (!svg) return;
   const onlyFilled = svgId === 'mm-svg' && document.getElementById('mm-only') && document.getElementById('mm-only').checked;
+  const showCmds = svgId === 'mm-svg' && document.getElementById('mm-cmds') && document.getElementById('mm-cmds').checked && typeof CMDS !== 'undefined';
   svg.innerHTML = '';
   const gEdges = mkEl('g'), gNodes = mkEl('g'); svg.appendChild(gEdges); svg.appendChild(gNodes);
 
   // Build the tree that will be drawn
-  const techs = TREE.filter(t => !techFilter || t.id === techFilter).map(t => ({
+  const techs = TREE.filter(t => techFilter ? t.id === techFilter : t.id !== 'cheat').map(t => ({
     t, subs: t.subs.map(s => ({ s, pages: s.pages.filter(p => !onlyFilled || pageHasContent(t.id + '/' + s.id + '/' + p.id)) }))
       .filter(x => !onlyFilled || x.pages.length)
   })).filter(x => !onlyFilled || x.subs.length);
@@ -515,6 +520,16 @@ function initMM(svgId, techFilter) {
         const built = !!RENDERERS[route], mine = hasUserData(route);
         edge(gEdges, sp, pp, t.col, built || mine ? 0.35 : 0.12, 1);
         leaf(gNodes, pp, pa, p.label, built ? '#00bfa0' : mine ? '#f0980a' : null, t.col, () => go(route));
+        if (showCmds) {
+          // a vertical list (13 px per line) beyond the page label, so labels never overlap
+          const cs = CMDS.filter(c => c.page === route), n = cs.length, R4 = R3 + 230;
+          const base = { x: R4 * Math.cos(pa), y: R4 * Math.sin(pa) };
+          cs.forEach((c, j) => {
+            const cp = { x: base.x, y: base.y + (j - (n - 1) / 2) * 13 };
+            edge(gEdges, { x: (R3 + 12) * Math.cos(pa), y: (R3 + 12) * Math.sin(pa) }, cp, '#c4d4e0', 0.15, 0.7);
+            cmdLeaf(gNodes, cp, pa, c, () => go(route));
+          });
+        }
       });
       node(gNodes, sp.x, sp.y, s.label, t.col, 'sub', () => go(t.id + '/' + s.id));
       sa += sAng;
@@ -551,6 +566,16 @@ function leaf(g, p, ang, lbl, fillCol, col, cb) {
   const right = Math.cos(ang) >= 0;
   const t = mkEl('text', { x: p.x + (right ? 9 : -9), y: p.y + 4, 'text-anchor': right ? 'start' : 'end', fill: fillCol ? '#c4d4e0' : '#607a90', 'font-size': 11.5, 'font-family': 'Source Sans 3,sans-serif' });
   t.textContent = lbl; el.appendChild(t);
+  el.addEventListener('click', () => { if (!el.ownerSVGElement.dataset.moved) cb() });
+  g.appendChild(el);
+}
+function cmdLeaf(g, p, ang, c, cb) {
+  const el = mkEl('g', { class: 'nd' });
+  el.appendChild(mkEl('circle', { cx: p.x, cy: p.y, r: 2.5, fill: '#c4d4e0' }));
+  const right = Math.cos(ang) >= 0, lbl = c.d.length > 34 ? c.d.slice(0, 33) + '…' : c.d;
+  const t = mkEl('text', { x: p.x + (right ? 6 : -6), y: p.y + 3, 'text-anchor': right ? 'start' : 'end', fill: '#8aa0b2', 'font-size': 9.5, 'font-family': 'JetBrains Mono,monospace' });
+  t.textContent = lbl; el.appendChild(t);
+  const ti = mkEl('title'); ti.textContent = c.cmd + '\n' + c.d; el.appendChild(ti);
   el.addEventListener('click', () => { if (!el.ownerSVGElement.dataset.moved) cb() });
   g.appendChild(el);
 }
@@ -705,6 +730,7 @@ async function importTxtFiles(files, route) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────
+if (typeof buildCheatTree === 'function') buildCheatTree();
 loadCustomPages();
 OPEN_T.add('cisco'); OPEN_T.add('f5');
 OPEN_S.add('cisco/vpn'); OPEN_S.add('f5/ltm');
