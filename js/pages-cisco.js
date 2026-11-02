@@ -431,7 +431,7 @@ function pgNXDiscards() {
     + '<div class="content">'
     + '<p>Example: a VRF uplink to a WAN router over <code>port-channel10</code> = 2 &times; 10G (<code>Eth1/11</code>, <code>Eth2/11</code>, on two line cards). Queuing templates <code>4q8e</code> / <code>1p3q1t-8e</code> / <code>2q4t-8e</code> are Nexus 7000/7700 style.</p>'
 
-    + co('r', '&#x1F3AF;', 'Real case: the drops here were a red herring', 'Problem: slow / lossy transfers between a mainframe and a remote site. The ingress drops on this 10G uplink led to a microburst theory &mdash; but the real bottleneck was <strong>further along the WAN path: a ~100 Mbit/s link</strong> (as remembered). Local discards were tiny compared to the traffic volume; the path was limited by its narrowest link. Check the whole path before tuning the first box.')
+    + co('r', '&#x1F3AF;', 'Real case: the drops here were a red herring', 'Slow transfers between a mainframe and a remote site. The ingress drops on this 10G uplink led to a microburst theory &mdash; the real bottleneck was a <strong>logical 10 Mbit/s cap</strong> on the WAN segment further along the path. Full story: <a href="#cisco/nxos/case-mainframe">Case: slow mainframe transfer</a>.')
     + '<h2>1. Error counters</h2>'
     + cb('NX-OS', `show interface port-channel 10 counters errors
 show interface ethernet 1/11 counters errors`)
@@ -493,14 +493,14 @@ IP: src-dst ip rotate 0`)
     + tbl(['Step', 'How'], [
       ['list every hop and link between both ends', '<code>traceroute vrf &lt;vrf&gt; &lt;dst&gt;</code> from the switch, plus the WAN provider\'s path / topology'],
       ['find the <strong>narrowest link</strong> and its utilisation', 'interface speed and load on each hop (monitoring graphs, <code>show interface … | include rate|BW</code>); ask the WAN provider for the contracted bandwidth and their utilisation / drops'],
-      ['measure real throughput end to end', 'iperf (or a file transfer) between hosts near both ends &mdash; if it tops out around one link speed (e.g. ~100 Mbit/s), you found the bottleneck'],
+      ['measure real throughput end to end', 'iperf (or a file transfer) between hosts near both ends &mdash; if it tops out around one link speed, you found the bottleneck'],
       ['compare with the drops you see locally', 'a few thousand drops on a 10G port do not explain a slow 100 Mbit/s path &mdash; relative numbers matter'],
     ])
     + co('t', '&#x1F4A1;', 'Rule of thumb', 'Throughput of one path = its slowest link (minus overhead). Local queue drops are worth chasing only when their <strong>increase</strong> matches the time of the problem.')
     + '<h2>5. SVI counters</h2>'
     + cb('NX-OS', `show interface vlan 552`)
     + cb('output (shortened)', `Vlan552 is up, line protocol is up
-  Internet Address is 100.96.144.130/26
+  Internet Address is 100.64.144.130/26
   60 seconds input rate 77176 bits/sec, 66 packets/sec
   L3 Switched: input: 14455066563 pkts - output: 1993816313 pkts`)
     + '<p>Good for a quick rate check of one VRF/VLAN on the uplink; the physical drops are on the member interfaces, not on the SVI.</p>'
@@ -511,6 +511,112 @@ RENDERERS['cisco/nxos/discards'] = pgNXDiscards;
 IDX.push(
   { t: 'NX-OS InDiscards / OutDiscards on port-channel', p: 'cisco/nxos/discards', k: 'nexus nx-os indiscards outdiscards counters errors port-channel discards drops', v: 'Ingress queue drops vs egress discards' },
   { t: 'NX-OS queuing: show policy-map interface dropped', p: 'cisco/nxos/discards', k: 'nexus 7000 4q8e 1p3q1t 2q4t queuing policy-map interface queue dropped cos', v: 'Read per-queue drops; clear and measure the increase' },
-  { t: 'Case: bottleneck further in the WAN (~100 Mbit/s), not local drops', p: 'cisco/nxos/discards', k: 'mainframe slow transfer bottleneck wan 100 mb narrowest link microburst red herring iperf traceroute', v: 'Check the whole path before tuning the first box' },
+  { t: 'Case: bottleneck was a 10 Mbit/s cap, not local drops', p: 'cisco/nxos/case-mainframe', k: 'mainframe slow transfer bottleneck wan 100 mb narrowest link microburst red herring iperf traceroute', v: 'Check the whole path before tuning the first box' },
   { t: 'Port-channel load balance src-dst ip-l4port', p: 'cisco/nxos/discards', k: 'show port-channel traffic load-balance src-dst ip l4port hash imbalance rx tx', v: 'Rx imbalance is the neighbour hash' },
+);
+
+// ═══════════════════════════════════════════════════════════════════
+// Case: slow mainframe transfer — WAN bottleneck, bandwidth upgrade, why not 10x
+// ═══════════════════════════════════════════════════════════════════
+(function () {
+  const sub = TREE.find(t => t.id === 'cisco').subs.find(s => s.id === 'nxos');
+  if (!sub.pages.some(p => p.id === 'case-mainframe')) sub.pages.push({ id: 'case-mainframe', label: 'Case: slow mainframe transfer' });
+})();
+
+function pgCaseMainframe() {
+  return '<div class="ph"><div class="pt">Case: slow mainframe transfer &mdash; the bottleneck was a 10 Mbit/s cap</div>'
+    + '<div class="ps">Mainframe file transfers (Enterprise Extender = SNA over UDP) between two data centres in different countries over a shared mainframe VRF carried by a WAN provider. Local drops looked suspicious; the real limit was a logical 10 Mbit/s cap. After raising it 10&times; the transfer was 3.3&times; faster &mdash; as expected.</div>'
+    + '<div class="tags">' + tag('tp', 'Nexus') + tag('tp', 'IOS XR') + tag('tb', 'WAN') + tag('ta', 'Throughput') + tag('ta', 'MTU') + tag('ta', 'Mainframe / EE') + tag('tr', 'Incident') + '</div></div>'
+    + '<div class="content">'
+    + tbl(['Summary', ''], [
+      ['Symptom', 'a 1 GB transfer took ~26&ndash;27 minutes (&asymp; 5 Mbit/s); the customer was getting nervous'],
+      ['Dead ends', 'ingress drops on a 10G data-centre uplink (<a href="#cisco/nxos/discards">Discards &amp; queuing</a>); periodic ping loss at 1500 bytes; "fragmentation"'],
+      ['Root cause', 'the mainframe VRF segment to that country was <strong>logically capped to 10 Mbit/s</strong> (shaping) &mdash; a design decision, shared by all mainframe customers there'],
+      ['Fix', 'cap raised to 100 Mbit/s (change on 6 devices) + faster link speed activated in the z/OS definitions on both ends'],
+      ['Result', 'same 1 GB transfer: 27 min 27 s &rarr; 8 min 27 s = <strong>3.3&times; faster</strong>'],
+    ])
+
+    + '<h2>How it went</h2><div class="flow">'
+    + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">Local suspicion: drops on the DC uplink</div><p>Ingress queue drops on the port-channel to the WAN router looked like a cause. But the counters had never been cleared, the drops were tiny against the total volume, and current utilisation of the members was in the kbit/s range. Counters were cleared to watch for an increase during the next slow transfer &mdash; it did not explain the problem.</p></div></div>'
+    + '<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">Which path does the traffic really take?</div><p>Two WAN paths existed between the sites: a <strong>shared 60 Mbit/s</strong> path and a <strong>10 Mbit/s</strong> path dedicated to the mainframe VRF. Nobody was sure which one carried the transfers &mdash; the application team named the exact endpoint addresses (VIPAs), and the network topology showed: mainframe VRF hand-off in one data centre &rarr; WAN provider stretch &rarr; hand-off to the regional network in the other country.</p></div></div>'
+    + '<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">The cap</div><p>An architect confirmed the segment was <strong>logically capped to 10 Mbit/s</strong> at the original request of the mainframe organisation. Usable throughput for one customer is lower still: the cap is shared by all mainframe customers, and tunnel / protocol overhead takes its part. Measured: &asymp; 5 Mbit/s for one transfer &mdash; about half of the cap.</p></div></div>'
+    + '<div class="fs"><div class="fsn">4</div><div class="fsb"><div class="fst">Side track: MTU and ping loss</div><p>See the two sections below &mdash; both turned out <strong>not</strong> to be a second problem.</p></div></div>'
+    + '<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Two layers to change</div>'
+    + tbl(['Layer', 'What'], [
+      ['network', 'raise the shaping/cap on the WAN and VRF edges (policies and interfaces on 6 devices). The transport is shared by several overlay backbones, so the cap is <strong>adjusted</strong>, not removed &mdash; fair sharing must stay'],
+      ['z/OS / SNA', 'activate the faster link speed in the definitions on both mainframes (transmission group properties); after the PUs were inactivated and activated, the RTP connections re-established with the new values &mdash; no extra <code>MODIFY RTP</code> needed. Selective ACK was enabled on the endpoints'],
+    ])
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">6</div><div class="fsb"><div class="fst">The change and the result</div>'
+    + '<p>"Just a bandwidth increase" still meant 6 devices in a VRF shared by several countries: planned window on Monday instead of Friday, ad-hoc approvals, end-to-end test by the application team before the change was closed.</p>'
+    + cb('transfer log (mainframe file transfer)', `before:  STARTED 15:31:48  ENDED 15:59:15   BYTES 1000000000   TRANSMISSION RATE = 607164
+after:   STARTED 12:07:41  ENDED 12:16:08   BYTES 1000000000   TRANSMISSION RATE = 1972386`)
+    + tbl(['', 'Before', 'After'], [
+      ['duration', '1647 s', '507 s'],
+      ['rate (bytes/s &times; 8)', '&asymp; 4.9 Mbit/s (about half of the 10 Mbit/s cap)', '&asymp; 15.8 Mbit/s'],
+      ['speed-up', '', '<strong>3.3&times;</strong>'],
+    ])
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">7</div><div class="fsb"><div class="fst">The non-technical part</div><p>Who pays for more bandwidth on a shared transport (cost allocation between the infrastructure owners), who decides (the cap was a global design decision, not a local one), and management escalation because the end customer was waiting. Technical findings had to be summarised for executives.</p></div></div>'
+    + '</div>'
+
+    + '<h2>Ping loss at 1500 bytes &mdash; real loss or rate limiting?</h2>'
+    + cb('IOS XR', `ping vrf <VRF> 100.64.147.49 repeat 1500 size 1500
+!!!!!!!!!!!!!!!!!.!!!!!!!!!!!!!!!!!.!!!!!!!!!!!!!!!!!.!!!!!!!!!!!!!!!!!.…
+Success rate is 94 percent (949/1003)
+
+ping vrf <VRF> 100.64.147.49 repeat 1500          (100 bytes)
+Success rate is 99 percent (1496/1500)`)
+    + tbl(['Observation', 'Reading'], [
+      ['a loss <strong>every ~18th packet</strong>, perfectly regular', 'typical for <strong>ICMP rate limiting / control-plane policing</strong> on the target router, not for a lossy link (real loss is irregular and correlates with load)'],
+      ['more loss with bigger packets', 'byte-based policers fill faster with large packets &mdash; same explanation'],
+      ['the target is a router interface', 'a ping to a router is answered by its CPU (control plane) &mdash; it measures the router\'s ICMP policy, not the forwarding path'],
+    ])
+    + co('t', '&#x1F4A1;', 'Measure through the router, not to it', 'Ping (or better iperf / a transfer) between hosts <strong>behind</strong> the routers. If a host-to-host test at full size shows no loss, the ping loss was the router protecting its CPU.')
+
+    + '<h2>MTU check from the host</h2>'
+    + cb('ping with DF (from the host)', `ping size 1500  ->  "needs fragmentation at 100.64.144.132, next-hop MTU size is 1500"
+ping size 1472  ->  OK (22 ms)`)
+    + tbl(['Value', 'Meaning'], [
+      ['ping "size" = ICMP payload', 'IP packet = payload + 8 (ICMP) + 20 (IP) = <strong>payload + 28</strong>'],
+      ['1472 + 28 = 1500', 'fits a standard 1500-byte MTU &rarr; path MTU is 1500, nothing wrong'],
+      ['1500 + 28 = 1528', 'too big with DF set &rarr; "needs fragmentation" is the correct answer, not a fault'],
+      ['route MTU 1500 on the hosts', 'matches the path &mdash; no need to lower it'],
+      ['jumbo frames?', 'only if <strong>every</strong> hop end to end supports them &mdash; across a provider WAN usually not; does not help against a 10 Mbit/s cap'],
+    ])
+    + cb('Linux / Windows equivalents', `ping -M do -s 1472 <host>        # Linux: DF set, 1472 + 28 = 1500
+ping -f -l 1472 <host>           # Windows: DF set
+# raise/lower the size until it stops working -> path MTU = largest working size + 28`)
+
+    + '<h2>Why 10&times; bandwidth did not give 10&times; speed</h2>'
+    + tbl(['Reason', 'Explanation'], [
+      ['shared capacity', 'the raised cap is still shared by all mainframe customers on that segment'],
+      ['one flow', 'a single transfer rarely fills a link; test with several in parallel'],
+      ['the protocol', '<strong>Enterprise Extender</strong> (SNA over UDP) &mdash; its HPR/RTP layer has its own adaptive rate control that reacts carefully to delay and loss'],
+      ['latency', 'one flow over a long path is limited by bandwidth &times; delay'],
+      ['end systems', 'CPU, disk, compression, application settings; the mainframes still had 1G NICs'],
+      ['the next bottleneck', 'once the cap is gone, another segment becomes the slowest'],
+    ])
+    + cb('bash', `iperf3 -c <server> -t 30            # one stream
+iperf3 -c <server> -t 30 -P 8       # 8 parallel streams — closer to the path capacity
+iperf3 -c <server> -u -b 80M -t 30  # UDP at a fixed rate (EE is UDP): watch loss and jitter`)
+
+    + '<h2>Lessons</h2>'
+    + '<ul style="margin:0 0 10px 22px">'
+    + '<li>Find the <strong>actual path</strong> and its narrowest point first (which WAN connection, which VRF, shared or dedicated, shaped or not).</li>'
+    + '<li>Old <strong>design caps</strong> outlive the applications they were sized for &mdash; check shaping/policers, not only link speeds.</li>'
+    + '<li>Ping to a router measures its control plane; regular loss patterns mean rate limiting.</li>'
+    + '<li>"Needs fragmentation" at 1500 with DF is normal &mdash; the payload + 28 rule.</li>'
+    + '<li>A bandwidth change in a shared VRF is a multi-device change: plan, approve, test end to end before closing.</li>'
+    + '<li>Expect the speed-up to be limited by sharing, the protocol and the next bottleneck &mdash; measure, do not promise.</li>'
+    + '</ul>'
+    + '</div>';
+}
+
+RENDERERS['cisco/nxos/case-mainframe'] = pgCaseMainframe;
+IDX.push(
+  { t: 'Ping loss every Nth packet = ICMP rate limiting', p: 'cisco/nxos/case-mainframe', k: 'ping loss regular pattern copp control plane policing icmp rate limit router 1500 bytes', v: 'Measure through the router, not to it' },
+  { t: 'Path MTU: needs fragmentation, payload + 28', p: 'cisco/nxos/case-mainframe', k: 'mtu df ping 1472 1500 needs fragmentation next-hop mtu path mtu jumbo', v: '1472 + 28 = 1500' },
+  { t: 'Case: slow mainframe transfer (10 Mbit/s WAN segment)', p: 'cisco/nxos/case-mainframe', k: 'mainframe transfer slow wan bottleneck bandwidth upgrade 3.3x enterprise extender ee sna udp hpr shared vrf', v: '10x bandwidth gave 3.3x speed — why' },
+  { t: 'Why 10x bandwidth is not 10x faster', p: 'cisco/nxos/case-mainframe', k: 'bandwidth upgrade throughput single flow shared latency bandwidth delay iperf parallel', v: 'Sharing, one flow, protocol, latency, end systems' },
 );
