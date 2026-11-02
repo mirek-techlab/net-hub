@@ -272,6 +272,12 @@ curl: (7) Failed to connect to 10.20.2.8 port 9026: Connection refused`)
     + co('t', '&#x1F50E;', 'All members refused = not an F5 problem', 'If every member returns <em>Connection refused</em> on the service port, the application is not running/listening. Hand over to the server/app team with the test output.')
     + '<p>Test many members at once: script on the <a href="#f5/ltm/monitors">HTTPS Monitors</a> page.</p>'
 
+    + '<h2>Partitions on an unfamiliar box</h2>'
+    + cb('tmsh', `cd /                          # "recursive" only walks the current partition
+list ltm virtual recursive one-line
+list net route-domain          # RDs that exist (more reliable than list auth partition)
+cd /Common                     # run util bash does not work from /`)
+    + '<p>More lessons: <a href="#f5/ltm/case-preview-vip">Case: new HTTPS VIP + SAN cert</a>.</p>'
     + '<h2>Packet capture</h2>'
     + cb('bash', `tcpdump -nni 0.0:nnn 'host 10.20.8.21 and port 18090'`)
     + '<p>Details and how to read the F5-specific fields: <a href="#f5/logs/tcpdump">tcpdump &amp; flows</a>.</p>'
@@ -342,6 +348,11 @@ Issuer: C=US, O=Example Corp, CN=Corporate Issuing CA
     + '<h2>What a member / VIP presents</h2>'
     + cb('bash', `echo | rdexec 11 openssl s_client -connect 10.20.8.21:9021 -servername ws-esb.example.com 2>/dev/null | openssl x509 -noout -subject -issuer -enddate
 curl -v --resolve app.example.com:443:192.168.10.220 https://app.example.com/   # test a VIP by name before DNS points to it`)
+    + '<h2>Generate key + CSR with SANs on the F5</h2>'
+    + cb('tmsh', `create sys crypto key app.example.com_2026 key-size 4096 gen-csr common-name app.example.com \\
+    subject-alternative-name "DNS:app.example.com, DNS:app"
+list sys crypto csr app.example.com_2026      # PEM block for the CA`)
+    + co('a', '&#x26A0;&#xFE0F;', 'Put the CN into the SAN list too', 'Browsers ignore the CN and check only SANs. Full worked example: <a href="#f5/ltm/case-preview-vip">Case: new HTTPS VIP + SAN cert</a>.')
     + '<h2>Install a renewed certificate</h2>'
     + cb('tmsh', `tmsh install sys crypto cert wildcard_example.com_2026 from-local-file /var/tmp/wildcard_2026.crt
 tmsh install sys crypto key  wildcard_example.com_2026 from-local-file /var/tmp/wildcard_2026.key
