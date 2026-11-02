@@ -263,3 +263,89 @@ IDX.push(
   { t: 'ASA logging list for VPN troubleshooting', p: 'cisco/vpn/case-partner', k: 'asa logging list message 713001 715999 750001 602303 402116 113019 logging buffered monitor terminal monitor buffer-size', v: 'Only IKE/IPsec messages, bigger buffer, streamed to SSH' },
   { t: 'Case: partner tunnel drops every 2 hours (ASA <-> Palo Alto)', p: 'cisco/vpn/case-partner', k: 'case incident partner tunnel drops asa palo alto aggressive mode dpd selectors ikev2 migration', v: 'Full incident write-up with logs from both sides' },
 );
+
+// ═══════════════════════════════════════════════════════════════════
+// Case: ASA multi-context — packet-tracer shows another context's route and ACL
+// ═══════════════════════════════════════════════════════════════════
+(function () {
+  const sub = TREE.find(t => t.id === 'cisco').subs.find(s => s.id === 'asa');
+  if (!sub.pages.some(p => p.id === 'case-multicontext')) sub.pages.push({ id: 'case-multicontext', label: 'Case: packet-tracer across contexts' });
+})();
+
+function pgCaseASAMultiContext() {
+  return '<div class="ph"><div class="pt">Case: ASA packet-tracer &ldquo;sees&rdquo; another context</div>'
+    + '<div class="ps">Multi-context ASA: a VPN context hands traffic to a customer firewall context. packet-tracer in the VPN context showed an egress interface and an ACL rule that do not exist in that context &mdash; and a drop caused by a missing host in the <em>other</em> context.</div>'
+    + '<div class="tags">' + tag('tp', 'Cisco ASA') + tag('tb', 'Multi-context') + tag('ta', 'packet-tracer') + tag('tr', 'Incident') + '</div></div>'
+    + '<div class="content">'
+    + tbl(['Summary', ''], [
+      ['Setup', 'cascaded contexts: <strong>VPN context</strong> (terminates the partner tunnel) &rarr; <strong>firewall context</strong> of the customer (security policy) &rarr; backbone. Contexts connected through shared/internal interfaces'],
+      ['Symptom', 'traffic from the partner to some hosts dropped; packet-tracer in the VPN context: drop with the egress interface <code>backbone</code>'],
+      ['Confusion', '<code>backbone</code> is not an interface of the VPN context, and for a working host the trace showed an ACL rule that is not in the VPN context\'s config'],
+      ['Cause', 'the destination hosts were missing in the ACL / object of the <strong>firewall</strong> context'],
+      ['Fix', 'host range added as an object to the firewall-context policy'],
+    ])
+
+    + '<h2>What we saw</h2><div class="flow">'
+    + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">Interfaces of the VPN context</div>'
+    + cb('ASA (vpn context)', `vpn# show nameif
+Interface              Name     Security
+Ethernet1/15.74        IA       90
+Ethernet1/16.1013      ID403    90
+Ethernet1/16.1626      VA       90          <- no "backbone" here`)
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">packet-tracer for a failing host</div>'
+    + cb('ASA (vpn context)', `Phase: 17
+Type: INPUT-ROUTE-LOOKUP
+Subtype: Resolve Egress Interface
+Result: ALLOW
+Additional Information:
+Found next-hop 192.0.2.134 using egress ifc  backbone     <- interface of ANOTHER context
+…
+Result: … drop`)
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">packet-tracer for a working host</div>'
+    + cb('ASA (vpn context)', `Phase: 17
+Type: ACCESS-LIST
+Subtype: log
+Result: ALLOW
+Additional Information:
+Forward Flow based lookup yields rule:
+ in  id=0x…, priority=12, domain=permit, deny=false
+     src ip/id=10.200.66.1, mask=255.255.255.255, port=0
+     dst ip/id=10.112.114.56, mask=255.255.255.252, port=443     <- rule NOT in the vpn context config
+     input_ifc=any, output_ifc=any`)
+    + '<p>"Where does this context take a /30 on port 443 from, when it is not in its config?" &mdash; it is the rule of the <strong>firewall context</strong>.</p>'
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">4</div><div class="fsb"><div class="fst">Fix in the firewall context</div>'
+    + cb('ASA (firewall context)', `fw# show run object id HOSTS_10.112.114.1-59
+object network HOSTS_10.112.114.1-59
+ range 10.112.114.1 10.112.114.59
+! object referenced in the access rule for the partner traffic`)
+    + '</div></div></div>'
+
+    + '<h2>Explanation</h2>'
+    + '<p>With cascaded contexts the packet leaves the VPN context through an internal/shared interface and is classified into the next context. In this case the packet-tracer output clearly contained phases evaluated <strong>after the hand-off</strong> &mdash; the route lookup and the access rule of the next context &mdash; which is why the egress interface and the ACL rule were not found in the VPN context\'s own configuration.</p>'
+    + '<p>For the failing hosts the firewall context had no matching object/rule, so the trace did not end in a clean "ACL drop" in the firewall context; instead the lookup went its own way and ended with a drop on transmit towards the backbone &mdash; a misleading place for a missing ACL entry.</p>'
+    + co('t', '&#x1F4A1;', 'Reading packet-tracer on a multi-context ASA', 'Before trusting a phase, ask: <strong>which context does it belong to?</strong> Compare interface names with <code>show nameif</code> and rules with <code>show run access-list</code> of each context. If something is not in "your" context, the trace has crossed into the next one.')
+
+    + '<h2>Useful commands</h2>'
+    + cb('ASA (system / admin context)', `show context                                    # contexts, their interfaces, config URLs
+changeto context <name>                         # switch context
+changeto system`)
+    + cb('ASA (in a context)', `show nameif                                     # interfaces of THIS context
+packet-tracer input <ifc> tcp <src> 12345 <dst> 443 detailed
+show run access-group
+show run access-list <acl> | include <dst>
+show run object id <name>
+show route <dst>`)
+    + '<h2>Lessons</h2>'
+    + '<ul style="margin:0 0 10px 22px"><li>A drop shown in one context can be caused by the policy of the next one &mdash; trace in <strong>each</strong> context along the path.</li>'
+    + '<li>Compare a failing host with a working one: the difference in the trace (here an access rule vs. a route to the backbone) points to the missing piece.</li>'
+    + '<li>Interface and rule names that are not in <code>show nameif</code> / the context config are the hint that the trace crossed a context boundary.</li></ul>'
+    + '</div>';
+}
+
+RENDERERS['cisco/asa/case-multicontext'] = pgCaseASAMultiContext;
+IDX.push(
+  { t: 'Case: ASA packet-tracer across contexts', p: 'cisco/asa/case-multicontext', k: 'asa multi-context multiple context packet-tracer cascaded shared interface changeto context show nameif egress ifc acl another context', v: 'Trace shows route/ACL of the next context' },
+);
