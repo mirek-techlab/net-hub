@@ -18,12 +18,18 @@ function defCmds(page, list) {
 }
 function cmdsFor(page, grp) { return CMDS.filter(c => c.page === page && (!grp || c.grp === grp)) }
 
-// Code block in the usual look, generated from the registry: "command   # description"
-function cmdBlock(page, grp, lang) {
+// Code block in the usual look, generated from the registry: "command   # description".
+// cc = comment character ('#' default, '!' for Cisco config). Multi-line commands (heredoc,
+// config snippets) get their description as a comment line above them.
+function cmdBlock(page, grp, lang, cc) {
   const list = cmdsFor(page, grp);
   if (!list.length) return '';
-  const w = Math.min(64, Math.max(...list.map(c => c.cmd.length)));
-  const code = list.map(c => c.d ? c.cmd.padEnd(w + 2) + '# ' + c.d : c.cmd).join('\n');
+  cc = cc || '#';
+  const single = list.filter(c => !c.cmd.includes('\n'));
+  const w = Math.min(64, Math.max(0, ...single.map(c => c.cmd.length)));
+  const code = list.map(c => c.cmd.includes('\n')
+    ? (c.d ? cc + ' ' + c.d + '\n' : '') + c.cmd
+    : (c.d ? (c.cmd.length >= w + 2 ? c.cmd + '  ' : c.cmd.padEnd(w + 2)) + cc + ' ' + c.d : c.cmd)).join('\n');
   return cb(lang || list[0].lang || 'cli', code);
 }
 
