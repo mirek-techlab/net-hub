@@ -199,12 +199,35 @@ diagnose debug enable
     ])
     + '<p>Send the capture summary + debug lines + timeline in one message. Facts from your own gateway end the "it is your firewall" discussion much faster than describing the config.</p>'
     + '</div></div>'
-    + '<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Fix and lesson</div>'
+    + '<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Resolution</div>'
+    + '<p>After the evidence was shared, the partner switched back to <strong>Main Mode</strong> and adjusted <strong>DPD</strong>; the VPN has been stable since. A proper IKEv2 migration is to be planned jointly.</p>'
+    + co('a', '&#x26A0;&#xFE0F;', 'DPD mismatch alone can drop tunnels', 'Very aggressive DPD on one side (short interval, few retries) tears the SA down on a short packet loss, while the other side still uses it &rarr; one-way traffic until the next rekey. Compare DPD interval / retries on both sides (ASA: <code>isakmp keepalive threshold … retry …</code> in the tunnel-group).')
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">6</div><div class="fsb"><div class="fst">Fix and lesson</div>'
     + '<ul style="margin:0 0 6px 20px"><li>Agree <strong>one</strong> parameter set in writing and have both sides fill it: IKE version, mode, auth (PSK/cert), local + remote IKE ID (type and value), public IPs (after NAT), phase 1 and 2 proposals, lifetimes, DPD, NAT-T, PFS, protected subnets.</li>'
     + '<li>Ask the partner for their <strong>current running config</strong> of the tunnel (sanitised), not their intention.</li>'
     + '<li>An IKE version migration is a <strong>synchronised event</strong>, not a one-sided experiment: agreed window, both sides online, same new parameter set, rollback plan &mdash; and leftovers of the other version removed completely.</li></ul>'
     + '</div></div>'
     + '</div>'
+    + '<h2>Reading ASA phase 2 rekey logs</h2>'
+    + '<p>Example from the same case (addresses replaced). The ASA rekeys a Child-SA and immediately sends a delete &mdash; is the new SA being killed?</p>'
+    + cb('ASA syslog', `%ASA-5-713041: Group = 203.0.113.104, IKE Initiator: Rekeying Phase 2...
+               local Proxy Address 198.51.100.151, remote Proxy Address 192.0.2.6
+%ASA-5-713049: Security negotiation complete for LAN-to-LAN Group (203.0.113.104)
+               Initiator, Inbound SPI = 0xcbb6bcc5, Outbound SPI = 0xd7c2638d      <- the NEW SA
+%ASA-5-713120: PHASE 2 COMPLETED (msgid=3fcc2f05)
+%ASA-7-715046: constructing IPSec delete payload
+%ASA-7-715009: IKE Deleting SA: Remote Proxy 192.0.2.6, Local Proxy 198.51.100.151
+               … delete confirmation references SPI 0x8b43a57b                     <- an OLD SPI`)
+    + tbl(['Check', 'Conclusion'], [
+      ['SPI in the delete = one of the <strong>new</strong> SPIs', 'the new SA is being torn down &rarr; real problem (policy/selector mismatch, peer rejects)'],
+      ['SPI in the delete = an <strong>old</strong> SPI', 'normal cleanup of the previous SA after rekey &mdash; not the problem'],
+    ])
+    + co('a', '&#x26A0;&#xFE0F;', 'The real finding: a host-to-host SA next to subnet SAs', 'Proxies <code>/32 &harr; /32</code> while the agreement is subnet-to-subnet. Typical causes: a <code>host</code> line in the crypto ACL on one side, or partner proxy-IDs / traffic selectors defined per host. Then both host and subnet SAs exist in parallel and rekeys/recovery can collide.')
+    + cb('Cisco ASA', `show crypto ipsec sa peer 203.0.113.104 | include local ident|remote ident|spi
+show run access-list <crypto-acl>                    # any "host" entries?
+show crypto ikev1 sa detail`)
+    + '<p>On the partner side (e.g. Palo Alto) the proxy-IDs must <strong>mirror the ASA crypto ACL exactly</strong> &mdash; same subnets, one proxy-ID per ACL line. Ask for their proxy-ID list and their IKE/IPsec logs for the same timestamps.</p>'
     + co('p', '&#x2139;&#xFE0F;', 'Better long-term', 'Move the peer to <strong>IKEv2</strong> with an FQDN/key-id identity: identity protected, NAT-T built in, fewer messages. See <a href="#cisco/vpn/theory">VPN / IPsec theory</a>.')
     + '</div>';
 }
@@ -214,5 +237,7 @@ IDX.push(
   { t: 'IKE log with unknown private peer IP (NAT)', p: 'theory/security/ike-nat', k: 'ike phase-1 failed initiator aggressive mode failed sa private ip 172.16 nat timeout cookie', v: 'Remote side logs its own private IP; responder cookie 0 = no reply' },
   { t: 'Aggressive vs main mode (IKEv1)', p: 'theory/security/ike-nat', k: 'aggressive mode main mode ike id psk fqdn am-disable aggressive-mode disable', v: 'Aggressive mode selects PSK by IKE ID' },
   { t: 'Case: partner half-migrated IKEv1 -> IKEv2 and back', p: 'theory/security/ike-nat', k: 'ikev2 ikev1 migration mismatch invalid_major_version intermittent tunnel partner leftover config parameter sheet', v: 'Mixed config, intermittent tunnel, agree one parameter set' },
+  { t: 'ASA phase 2 rekey delete: old vs new SPI', p: 'theory/security/ike-nat', k: 'asa 713041 713049 713120 715009 rekey phase 2 delete spi old sa cleanup host-to-host proxy id selector palo alto', v: 'Delete with an old SPI = normal cleanup' },
+  { t: 'DPD mismatch drops tunnels', p: 'theory/security/ike-nat', k: 'dpd dead peer detection keepalive threshold retry mismatch one-way', v: 'Compare DPD on both sides' },
   { t: 'NAT-T UDP 500 -> 4500', p: 'theory/security/ike-nat', k: 'nat-t udp 4500 500 nat detection ipsec', v: 'First packet always UDP 500' },
 );
