@@ -43,6 +43,7 @@ const TAG_META = {
   'fortigate': { l: 'FortiGate', f: 'fortinet' },
   'linux': { l: 'Linux / bash', f: 'tools' },
   'tcpdump': { l: 'tcpdump', f: 'tools' },
+  'edu-example': { l: 'Edu example (placeholder)', f: 'other' },
 };
 const tagSlug = t => String(t).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
 function tagMeta(t) { return TAG_META[t] || { l: t, f: 'other' } }
@@ -104,7 +105,10 @@ function routeLabelShort(route) {
 
 // ── Cheat sheets: built from the tags in the registry (called once by app.js before the first render) ──
 function buildCheatTree() {
-  if (TREE.some(t => t.id === 'cheat')) return;
+  // safe to call again (e.g. after Edu topic files added commands): rebuild from scratch
+  const old = TREE.findIndex(t => t.id === 'cheat');
+  if (old >= 0) TREE.splice(old, 1);
+  Object.keys(RENDERERS).filter(k => k.startsWith('cheat/')).forEach(k => delete RENDERERS[k]);
   const tags = [...new Set(CMDS.flatMap(c => c.tags))].sort();
   const fams = {};
   tags.forEach(t => { const f = tagMeta(t).f; (fams[f] = fams[f] || []).push(t) });

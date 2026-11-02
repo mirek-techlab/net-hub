@@ -735,3 +735,4 @@ loadCustomPages();
 OPEN_T.add('cisco'); OPEN_T.add('f5');
 OPEN_S.add('cisco/vpn'); OPEN_S.add('f5/ltm');
 render(decodeURIComponent(location.hash.slice(1)) || 'home');
+if (typeof eduLoadFiles === 'function') eduLoadFiles();   // Edu topic files from edu/manifest.js
