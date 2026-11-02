@@ -135,6 +135,32 @@ The packet specifies its destination as 10.200.65.2, its source as 10.30.154.64,
 The SA specifies its local proxy as 198.51.100.151/255.255.255.255/ip/0
 and its remote proxy as 10.200.66.6/255.255.255.255/ip/0.`)
     + '<p>The partner encrypted a packet between two <strong>subnets</strong> (10.30.x &harr; 10.200.65.x) into the <strong>host-to-host</strong> SA. The ASA checks every decrypted packet against the SA proxies and drops it. This message is proof of a <strong>selector mismatch on the sending side</strong>. Our selectors for reference: local 198.51.100.144/28 + 10.30.0.0/16, remote 10.200.64.0/22.</p>'
+    + '<h3>Day 2: one DPD teardown, then peer-initiated deletes</h3>'
+    + cb('ASA syslog (UTC)', `07:07:42  %ASA-3-713123: IKE lost contact with remote peer, deleting connection (keepalive type: DPD)
+07:07:42  %ASA-5-713259: Session is being torn down. Reason: Lost Service
+07:07:42  %ASA-4-113019: Session disconnected. Session Type: LAN-to-LAN, Duration: 4h:04m:45s,
+          Bytes xmt: 4380726157, Bytes rcv: 455083664, Reason: Lost Service
+07:07:42  %ASA-6-602304: IPSEC: An outbound LAN-to-LAN SA (SPI= 0x…) … has been deleted.   (many)
+07:07:42  %ASA-6-602304: IPSEC: An inbound LAN-to-LAN SA (SPI= 0x…) … has been deleted.    (many)
+07:07:42  %ASA-5-750001: Local:203.0.113.90:500 Remote:203.0.113.104:500 IKEv2 Received request to
+          establish an IPsec tunnel; local traffic selector = 10.30.43.7-10.30.43.7
+          remote traffic selector = 10.200.65.3-10.200.65.3                      <- single hosts
+07:07:42  %ASA-5-750001: … local TS = 10.40.155.151-10.40.155.151, remote TS = 10.200.65.7-10.200.65.7
+07:07:42  %ASA-5-713041: IKE Initiator: New Phase 1, IKE Peer 203.0.113.104
+          local Proxy Address 10.40.155.0, remote Proxy Address 10.200.64.0       <- subnets (IKEv1)
+07:08:06  %ASA-5-713119: PHASE 1 COMPLETED
+07:08:06  %ASA-5-713041: IKE Initiator: New Phase 2, local Proxy 100.96.0.0, remote Proxy 10.200.64.0
+07:09:56  %ASA-4-750003: IKEv2 Negotiation aborted due to ERROR: Maximum number of retransmissions reached
+later     … Connection terminated … Reason: Peer Terminate
+          … Session is being torn down. Reason: User Requested`)
+    + tbl(['Observation', 'Reading'], [
+      ['tunnel is built fine (phase 1 + 2 complete in ~24 s)', 'no missing tunnel-group, no basic NAT-T reachability problem'],
+      ['one teardown by <strong>our DPD</strong>', 'the partner stopped answering DPD for a moment'],
+      ['IKEv1 rebuild with <strong>subnet</strong> proxies next to IKEv2 entries with <strong>single-host</strong> selectors', 'mixed IKE behaviour during recovery; see the 750001 / 750003 notes above for how to tell who sends what'],
+      ['later drops: <code>Peer Terminate</code> / <code>User Requested</code>', 'the <strong>partner</strong> asked to delete the tunnel &mdash; not our DPD'],
+    ])
+    + '<p><strong>Working theory:</strong> something on the partner side periodically resets its IKE/IPsec state; after that our ASA no longer gets valid DPD answers (and drops the tunnel), or the partner deletes it itself. Questions for the partner:</p>'
+    + '<ul style="margin:0 0 10px 22px"><li>rekey at fixed intervals?</li><li>tunnel monitor / path monitoring action?</li><li>automation or a scheduled clear/restart of the tunnel?</li><li>stale-SA cleanup?</li><li>a still active IKEv2 / proxy-ID object for this peer?</li></ul>'
     + '<h3>What to request from the partner (Palo Alto)</h3>'
     + cb('request', `Please check the logs around the exact DPD loss timestamps (UTC):
   - <date> 08:59:56Z
@@ -149,7 +175,11 @@ Please provide:
   - IKE gateway version / exchange mode
   - whether any IKEv2 rekey/migration attempt happens at those times
   - whether the IKE daemon, dataplane or HA/path monitoring had any event at those times
-  - routing / policy-based forwarding for the VPN traffic and the proxy-IDs (traffic selectors)`)
+  - routing / policy-based forwarding for the VPN traffic and the proxy-IDs (traffic selectors)
+For the next expected outage, simultaneously on the partner side:
+  1. packet capture (receive / transmit / drop) for both peer addresses on UDP/500 and UDP/4500
+  2. ikemgr.log with IKE debug enabled, at least 60 s before and after our DPD event
+  3. the IKE pcap from the IKE debug`)
     + '<h3>Where is the problem? Capture on both ends at the same time</h3>'
     + tbl(['Partner\'s capture during the outage shows', 'Problem is in'], [
       ['our UDP/4500 IKE/DPD packets arrive, <strong>no reply</strong> leaves', 'partner\'s IKE processing (daemon, config, CPU)'],
