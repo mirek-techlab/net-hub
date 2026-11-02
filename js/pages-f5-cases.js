@@ -12,7 +12,6 @@
   ] });
 })();
 
-const fstep = (n, title, body) => '<div class="fs"><div class="fsn">' + n + '</div><div class="fsb"><div class="fst">' + title + '</div>' + body + '</div></div>';
 
 // ═══════════════════════════════════════════════════════════════════
 // Case: new dedicated HTTPS VIP for an existing app ("preview") + SAN certificate
