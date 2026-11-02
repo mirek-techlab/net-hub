@@ -172,7 +172,7 @@ diagnose debug enable
     + '<h2>Case: the remote side "migrated" to IKEv2 &mdash; and back</h2>'
     + '<p style="color:var(--text2)">Real incident, anonymised. The partner changed their side without telling us; the tunnel became intermittent and their logs showed the message above.</p>'
     + '<div class="flow">'
-    + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">What they did</div><p>Switched their gateway to IKEv2 on their own, turned on aggressive mode and changed identity settings. When it did not come up, they switched back to IKEv1 &mdash; but kept much of the IKEv2 configuration (proposals, identity type, timers). The result was a mix that neither matched the old agreement nor a clean IKEv2 setup.</p></div></div>'
+    + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">What they did</div><p>Switched their gateway to IKEv2 on their own, turned on aggressive mode, changed identity settings &mdash; and defined the traffic selectors <strong>per host (/32)</strong>, while our side protects whole networks (/16 and similar). When it did not come up, they switched back to IKEv1 &mdash; but kept much of the IKEv2 configuration (proposals, identity type, timers). The result was a mix that neither matched the old agreement nor a clean IKEv2 setup.</p></div></div>'
     + '<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">What it looked like</div>'
     + tbl(['Symptom', 'Explanation'], [
       ['phase 1 timeout as initiator, responder cookie 0', 'our side did not accept their packets (version / mode / ID did not match any config) &rarr; no reply'],
@@ -227,6 +227,14 @@ diagnose debug enable
     + cb('Cisco ASA', `show crypto ipsec sa peer 203.0.113.104 | include local ident|remote ident|spi
 show run access-list <crypto-acl>                    # any "host" entries?
 show crypto ikev1 sa detail`)
+    + '<h3>Why /32 against /16 produces host SAs (and instability)</h3>'
+    + tbl(['Mechanism', 'Effect'], [
+      ['<strong>IKEv2 traffic selector narrowing</strong> (RFC 7296): the responder may narrow the proposed selectors to the intersection with its policy', '/16 proposed vs /32 configured &rarr; an SA for one host only'],
+      ['<strong>ASA as responder</strong> typically accepts a proxy that is a <strong>subset</strong> of its crypto ACL', 'their /32 inside our /16 is accepted &rarr; a separate host-to-host SA is built'],
+      ['our side initiates for the /16, they initiate per host', 'parallel subnet and host SAs, one per host &rarr; many SAs, rekey collisions'],
+      ['traffic from hosts not covered by their /32 list', 'no matching SA on their side &rarr; dropped &rarr; looks "intermittent" depending on the source host'],
+    ])
+    + co('t', '&#x1F4A1;', 'Rule', 'Selectors (crypto ACL / proxy-IDs / traffic selectors) must be <strong>identical and mirrored</strong> on both sides &mdash; same prefixes, same number of entries. Write them into the parameter sheet; never let one side "simplify" them to hosts or widen them to any.')
     + '<p>On the partner side (e.g. Palo Alto) the proxy-IDs must <strong>mirror the ASA crypto ACL exactly</strong> &mdash; same subnets, one proxy-ID per ACL line. Ask for their proxy-ID list and their IKE/IPsec logs for the same timestamps.</p>'
     + co('p', '&#x2139;&#xFE0F;', 'Better long-term', 'Move the peer to <strong>IKEv2</strong> with an FQDN/key-id identity: identity protected, NAT-T built in, fewer messages. See <a href="#cisco/vpn/theory">VPN / IPsec theory</a>.')
     + '</div>';
@@ -238,6 +246,7 @@ IDX.push(
   { t: 'Aggressive vs main mode (IKEv1)', p: 'theory/security/ike-nat', k: 'aggressive mode main mode ike id psk fqdn am-disable aggressive-mode disable', v: 'Aggressive mode selects PSK by IKE ID' },
   { t: 'Case: partner half-migrated IKEv1 -> IKEv2 and back', p: 'theory/security/ike-nat', k: 'ikev2 ikev1 migration mismatch invalid_major_version intermittent tunnel partner leftover config parameter sheet', v: 'Mixed config, intermittent tunnel, agree one parameter set' },
   { t: 'ASA phase 2 rekey delete: old vs new SPI', p: 'theory/security/ike-nat', k: 'asa 713041 713049 713120 715009 rekey phase 2 delete spi old sa cleanup host-to-host proxy id selector palo alto', v: 'Delete with an old SPI = normal cleanup' },
+  { t: 'Host /32 vs subnet /16 selectors (narrowing)', p: 'theory/security/ike-nat', k: 'traffic selector narrowing rfc 7296 proxy id subset host /32 /16 crypto acl mirror ikev2', v: 'Mismatched selectors → host SAs, rekey collisions' },
   { t: 'DPD mismatch drops tunnels', p: 'theory/security/ike-nat', k: 'dpd dead peer detection keepalive threshold retry mismatch one-way', v: 'Compare DPD on both sides' },
   { t: 'NAT-T UDP 500 -> 4500', p: 'theory/security/ike-nat', k: 'nat-t udp 4500 500 nat detection ipsec', v: 'First packet always UDP 500' },
 );
