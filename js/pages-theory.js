@@ -189,10 +189,20 @@ diagnose debug enable
       ['works only when one side initiates', 'parameters differ per direction &mdash; compare both configs line by line'],
     ])
     + '</div></div>'
-    + '<div class="fs"><div class="fsn">4</div><div class="fsb"><div class="fst">Fix and lesson</div>'
+    + '<div class="fs"><div class="fsn">4</div><div class="fsb"><div class="fst">Proving it is not your side (took days of discussion)</div>'
+    + tbl(['Evidence', 'How to get it'], [
+      ['your config did not change', 'config change log / commit history / archive diff for the tunnel since the last working day'],
+      ['their packets arrive and are different from the agreement', 'capture on your gateway from their public IP: IKE version, exchange type (aggressive / main / IKE_SA_INIT), ID payload'],
+      ['why your side does not answer', 'IKE debug on your gateway filtered on their public IP: "no matching peer / ID", "aggressive mode not allowed", version error'],
+      ['it works when the agreed parameters are used', 'a successful SA from the same peer when your side initiates (or from the time before their change)'],
+      ['timeline', 'first failure time vs. their change window &mdash; ask them for their change log'],
+    ])
+    + '<p>Send the capture summary + debug lines + timeline in one message. Facts from your own gateway end the "it is your firewall" discussion much faster than describing the config.</p>'
+    + '</div></div>'
+    + '<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Fix and lesson</div>'
     + '<ul style="margin:0 0 6px 20px"><li>Agree <strong>one</strong> parameter set in writing and have both sides fill it: IKE version, mode, auth (PSK/cert), local + remote IKE ID (type and value), public IPs (after NAT), phase 1 and 2 proposals, lifetimes, DPD, NAT-T, PFS, protected subnets.</li>'
     + '<li>Ask the partner for their <strong>current running config</strong> of the tunnel (sanitised), not their intention.</li>'
-    + '<li>Changes like an IKE version migration only in an agreed window, both sides online, with a rollback plan &mdash; and remove leftovers of the old/new version completely.</li></ul>'
+    + '<li>An IKE version migration is a <strong>synchronised event</strong>, not a one-sided experiment: agreed window, both sides online, same new parameter set, rollback plan &mdash; and leftovers of the other version removed completely.</li></ul>'
     + '</div></div>'
     + '</div>'
     + co('p', '&#x2139;&#xFE0F;', 'Better long-term', 'Move the peer to <strong>IKEv2</strong> with an FQDN/key-id identity: identity protected, NAT-T built in, fewer messages. See <a href="#cisco/vpn/theory">VPN / IPsec theory</a>.')
