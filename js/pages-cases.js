@@ -188,6 +188,24 @@ For the next expected outage, simultaneously on the partner side:
     ])
     + '<p>On Palo Alto: packet capture with receive / transmit / drop stages filtered on both peer addresses and UDP 500/4500, plus <code>ikemgr.log</code> with IKE debug and the IKE pcap, for at least 60 s around the expected outage.</p>'
     + co('a', '&#x26A0;&#xFE0F;', 'Trust the logs, not the description', 'The partner\'s answer was "IKE mode auto &mdash; accepts both, but initiates in main" while their own log said <em>aggressive mode</em> as initiator. When a statement contradicts a log line, ask for the log, not for another statement.')
+    + '<h3>Targeted VPN logging on the ASA (instead of a full debug)</h3>'
+    + '<p>With no syslog access and a busy box, the default buffer was overwritten within minutes. A message list keeps only the IKE/IPsec messages, in a bigger buffer, and streams them to the SSH session (saved to a file on the jump host):</p>'
+    + cb('Cisco ASA', `logging list VPN_DEBUG message 713001-713905      ! IKEv1 …
+logging list VPN_DEBUG message 713907-715999      ! … without 713906 (very chatty on a busy NAT-T tunnel)
+logging list VPN_DEBUG message 750001-751999      ! IKEv2 (e.g. 750001, 750003)
+logging list VPN_DEBUG message 602303-602304      ! IPsec SA created / deleted
+logging list VPN_DEBUG message 402114-402120      ! ESP with invalid SPI / not matching the SA policy (402116)
+logging list VPN_DEBUG message 113019             ! session disconnected + duration + reason
+logging buffer-size 4194304                       ! 4 MB buffer
+logging buffered VPN_DEBUG
+logging monitor VPN_DEBUG
+terminal monitor                                  ! stream to this SSH session; log the session to a file
+
+! afterwards
+terminal no monitor
+no logging monitor VPN_DEBUG
+show logging | include 713123|713259|750003|402116`)
+    + co('a', '&#x26A0;&#xFE0F;', 'Mind the load', 'Keep the list narrow and remove the monitor logging when done &mdash; on a busy firewall a broad list (or debug level) floods the session and costs CPU. Restore the previous <code>logging buffered</code> / <code>logging monitor</code> settings.')
     + '<h3>The commands that settled it (ASA)</h3>'
     + cb('Cisco ASA', `capture VA match ip any host 10.30.68.5          # during the outage: "Capturing - 0 bytes" = no traffic in the tunnel
 show capture VA
@@ -242,5 +260,6 @@ Alternatively, if IKEv1 must be kept, set the IKE mode explicitly to Main Mode.`
 
 RENDERERS['cisco/vpn/case-partner'] = pgCasePartnerVPN;
 IDX.push(
+  { t: 'ASA logging list for VPN troubleshooting', p: 'cisco/vpn/case-partner', k: 'asa logging list message 713001 715999 750001 602303 402116 113019 logging buffered monitor terminal monitor buffer-size', v: 'Only IKE/IPsec messages, bigger buffer, streamed to SSH' },
   { t: 'Case: partner tunnel drops every 2 hours (ASA <-> Palo Alto)', p: 'cisco/vpn/case-partner', k: 'case incident partner tunnel drops asa palo alto aggressive mode dpd selectors ikev2 migration', v: 'Full incident write-up with logs from both sides' },
 );
