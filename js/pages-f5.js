@@ -123,13 +123,19 @@ No client certificate CA names sent      <- server does not ask for a client cer
     + step(3, 'HTTP with curl', cb('bash', `rdexec 11 curl -v  --connect-timeout 5 http://10.20.8.21:18090/            # plain HTTP
 rdexec 11 curl -vkI --connect-timeout 5 -H 'Host: 10.20.8.210' https://10.20.8.21:18090/DEU/sales/services
 rdexec 11 curl -vkI --connect-timeout 5 -H 'Host: 10.20.8.210' https://10.20.8.21:9008/`)
-      + tbl(['Flag', 'Meaning'], [['<code>-v</code>', 'verbose (TLS + headers)'], ['<code>-k</code>', 'ignore certificate validation'], ['<code>-I</code>', 'HEAD request'], ['<code>-H</code>', 'set a header (Host)'], ['<code>-X POST</code>', 'method'], ['<code>--resolve name:443:IP</code>', 'connect to IP but send SNI/Host <code>name</code> &mdash; test a cert/vhost without DNS']])
+      + '<p>All curl options, timing and exit codes: <a href="#tools/http/curl">Testing Tools &rsaquo; curl</a>. Raw requests and how to read the answer: <a href="#tools/http/raw">Raw HTTP requests</a>.</p>'
       + co('a', '&#x26A0;&#xFE0F;', '-I is not what the monitor sends', '<code>curl -I</code> sends <strong>HEAD</strong>. A monitor with <code>POST</code> in its send string can get a different answer (e.g. 405 for HEAD but 200 for POST). Reproduce the exact request: <code>curl -sk -o /dev/null -w \'%{http_code}\\n\' -X POST -H \'Content-Length: 0\' -H \'Host: 10.20.8.211\' https://10.20.8.21:9021/de/productomd/v1.0.5/product/byGTIN</code>'))
     + step(4, 'Exact monitor request over TLS (byte for byte)', cb('bash', `(echo -e "POST /de/productomd/v1.0.5/product/byGTIN HTTP/1.1\\r\\nHost: 10.20.8.211\\r\\nContent-Length: 0\\r\\nConnection: Close\\r\\n\\r\\n"; sleep 1) \\
   | rdexec 11 openssl s_client -connect 10.20.8.21:9021 -servername 10.20.8.211 -quiet`)
       + co('a', '&#x26A0;&#xFE0F;', 'Jetty is strict about spaces', '<code>GET&nbsp;&nbsp;/path</code> (double space) &rarr; <code>400 Illegal character SPACE</code>. Exactly one space between method, URI and version.'))
-    + step(5, 'Pick the receive string from the real response', cb('response', `HTTP/1.1 405 Method Not Allowed      -> recv "HTTP/1.1 405"
-HTTP/1.1 400 Bad Request              -> recv "HTTP/1.1 400"  ({"errorMessage":"… Cannot be Empty"})`))
+    + step(5, 'Pick the receive string from the real response', cb('response', `HTTP/1.1 400 Bad Request
+Server: Jetty(9.4.53.v20231009)
+{"messageID":"…","errorCode":"DataException","errorMessage":"Account Number Cannot be Empty"}`)
+      + tbl(['Receive string', 'Strength'], [
+        ['<code>HTTP/1.1 400</code>', 'OK &mdash; but any 400 matches, also one from a proxy or a malformed request'],
+        ['<code>DataException</code> or <code>Account Number Cannot be Empty</code>', '<strong>better</strong> &mdash; only the application itself produces it; crash or unexpected error &rarr; DOWN'],
+      ])
+      + co('p', '&#x2139;&#xFE0F;', 'recv is a regular expression', 'Matched anywhere in the response (headers + start of the body). Escape special characters: <code>.</code> <code>(</code> <code>[</code> <code>?</code> &rarr; <code>\\.</code> etc. Optional <code>recv-disable</code> string puts the member into <em>disabled</em> (drain) instead of down.'))
     + '</div>'
 
     + '<h2>Test all members at once &mdash; script</h2>'
@@ -163,6 +169,15 @@ ltm monitor https VL444_ws_Customer {
 }`)
     + co('a', '&#x26A0;&#xFE0F;', 'Correction to the original note', 'The customer send string was <code>POST de/customer/…</code> &mdash; the URI must start with <code>/</code>, otherwise the server answers 400 and the receive string does not match.')
     + co('p', '&#x2139;&#xFE0F;', 'Two monitors on one pool', 'With <code>monitor VL444_ws_Product and VL444_ws_Customer</code> a member is UP only if <strong>both</strong> pass. If one is enough: <code>monitor min 1 of { VL444_ws_Product VL444_ws_Customer }</code>. Confirm which behaviour the service owner expects.')
+    + '<h3>POST endpoint without body, receive 400 (Order API)</h3>'
+    + cb('tmsh', `ltm monitor https VL557_Order_API {
+    destination *:9701
+    send "POST /common/v1.0/de/order HTTP/1.1\\r\\nHost: 10.20.8.211\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n"
+    recv "HTTP/1.1 400"
+    interval 5
+    timeout 16
+}`)
+    + co('t', '&#x1F4A1;', 'Prefer a real health endpoint', 'Ask the application team for <code>/health</code>, <code>/status</code> or <code>/ping</code> &mdash; 200 without business data is the most reliable monitor and avoids false DOWNs when the API validation changes.')
     + '<h3>GET endpoint, receive 400, with SNI</h3>'
     + cb('tmsh', `ltm monitor https VL557_Customer_API {
     destination *:9711
@@ -183,6 +198,7 @@ ltm monitor https VL444_ws_Customer {
       ['Timeout', 'routing / firewall / wrong route domain', 'test with <code>rdexec &lt;RD&gt;</code>, tcpdump'],
       ['TLS handshake fails', 'missing SNI, old ciphers, server wants client cert', '<code>server-name</code> in the monitor; <code>openssl s_client -servername</code>'],
     ])
+    + '<p>SSL error on the VIP while the members refuse connections: <a href="#tools/tcp/errors">Reading errors &rsaquo; case</a>.</p>'
     + '</div>';
 }
 
