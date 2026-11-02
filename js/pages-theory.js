@@ -247,13 +247,24 @@ diagnose debug enable
                               172.16.100.50[4500]-203.0.113.90[4500] … lifetime 86400 Sec.
 09:00:27  ike-nego-p1-fail    phase-1 negotiation failed as INITIATOR, AGGRESSIVE mode … Due to timeout.`)
     + tbl(['Lines', 'What it proves'], [
-      ['<code>INVALID-SPI</code> notifications two hours earlier', 'our ASA kept receiving ESP with SPIs it no longer had &rarr; the partner was still sending into an SA that our side had deleted &mdash; SA state out of sync long before the outage. On the ASA look for messages about ESP with an invalid/unknown SPI at the same times.'],
+      ['<code>INVALID-SPI</code> notifications at 06:58', 'right after the <strong>previous</strong> teardown (ASA DPD at 06:56): our ASA kept receiving ESP with SPIs it had already deleted &rarr; the partner went on sending into dead SAs, i.e. it did not process (or receive) our delete messages. On the ASA look for messages about ESP with an invalid/unknown SPI at the same times.'],
       ['SA deletes received at 08:59:55', 'the ASA DPD teardown (08:59:56 in the ASA log) &mdash; both logs match within a second'],
       ['p1 start as <strong>initiator, aggressive mode</strong> right after the delete', 'the "auto" gateway does initiate in Aggressive Mode &mdash; contrary to the partner\'s statement'],
       ['p1 start as responder, main mode one second later', 'our ASA initiates in parallel &mdash; both sides race'],
       ['succeeded as <strong>responder</strong>, main mode, port 4500', 'the tunnel came back because <strong>our</strong> ASA initiated it (NAT-T) &mdash; ~25 s'],
       ['failed as initiator, aggressive mode, timeout', 'their own attempt never works: our side drops Aggressive Mode'],
     ])
+    + '<h3>Our side: the DPD losses of one day</h3>'
+    + cb('ASA syslog, search "DPD" (UTC)', `04:54:41  %ASA-3-713123: IKE lost contact with remote peer, deleting connection (keepalive type: DPD)
+06:56:35  %ASA-3-713123: … (keepalive type: DPD)
+08:59:56  %ASA-3-713123: … (keepalive type: DPD)
+10:59:32  %ASA-3-713123: … (keepalive type: DPD)
+12:58:47  %ASA-3-713123: … (keepalive type: DPD)`)
+    + co('r', '&#x23F1;&#xFE0F;', 'Every ~2 hours', 'A regular interval is a <strong>timer</strong>, not a random network problem. It did not match the lifetimes the partner reported (24 h / 8 h) &mdash; so ask for everything periodic on their side: IKE/IPsec lifetimes actually in use, tunnel monitor, path monitoring, scheduled jobs/automation. Searching your own log for one keyword (here "DPD") and lining up the timestamps is the fastest way to see such a pattern.')
+    + '<h3>The partner\'s IKE SA view</h3>'
+    + cb('Palo Alto: IKE Info for the gateway', `NAME        GATEWAY  ROLE  MODE  ALGORITHM          CREATED          EXPIRES
+<ike-gw>    1        Init  Aggr  PSK/DH5/AES/SHA1   Jun.12 07:08:10  Jun.13 07:08:10`)
+    + co('a', '&#x2753;', 'Open point', 'Their active phase 1 SA was <strong>initiated by them in Aggressive Mode</strong> &mdash; confirming the mode. But it also means an Aggressive Mode SA <em>was</em> established once, so Aggressive Mode is apparently not refused in every case on our side. Verify instead of assuming: <code>show run all crypto ikev1 | include am-disable</code> on the ASA (and the IKE debug of such an attempt).')
     + co('t', '&#x1F4A1;', 'Ask for the partner\'s system log early', 'One screenshot of their IKE system log around the outage answered more than days of discussion: their mode, who rebuilt the tunnel, and that SAs were out of sync before. Ask for it in the first request.')
     + '<h3>Reading the IKE capture (Wireshark)</h3>'
     + cb('capture (simplified)', `13:14:10  OUR-ASA -> PEER  IKE_SA_INIT MID=00 Initiator Request     <- IKEv2, no answer
@@ -394,6 +405,7 @@ IDX.push(
   { t: 'Wireshark IKE: IKE_SA_INIT vs Identity Protection (Main Mode)', p: 'theory/security/ike-nat', k: 'wireshark isakmp ike_sa_init identity protection main mode aggressive quick mode ikev1 ikev2 capture', v: 'Which IKE version / mode is in the capture' },
   { t: 'ASA tries IKEv2 first, falls back to IKEv1', p: 'theory/security/ike-nat', k: 'asa crypto map ikev2 ikev1 fallback 750003 750001 retransmissions', v: 'Unanswered IKEv2 retries before IKEv1' },
   { t: 'Palo Alto IKE system log: ike-nego-p1, INVALID-SPI', p: 'theory/security/ike-nat', k: 'palo alto system log ike-nego-p1-start ike-nego-p1-succ ike-nego-p1-fail ike-recv-p2-delete ike-recv-notify invalid-spi initiator responder', v: 'Who rebuilt the tunnel, which mode, SA out of sync' },
+  { t: 'DPD loss every 2 hours = a timer', p: 'theory/security/ike-nat', k: 'dpd 713123 periodic every 2 hours timer pattern lifetime tunnel monitor', v: 'Line up timestamps of one keyword' },
   { t: 'DPD mismatch drops tunnels', p: 'theory/security/ike-nat', k: 'dpd dead peer detection keepalive threshold retry mismatch one-way', v: 'Compare DPD on both sides' },
   { t: 'NAT-T UDP 500 -> 4500', p: 'theory/security/ike-nat', k: 'nat-t udp 4500 500 nat detection ipsec', v: 'First packet always UDP 500' },
 );
