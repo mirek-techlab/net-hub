@@ -327,3 +327,91 @@ IDX.push(
   { t: 'ACI external EPG / L3Out subnets', p: 'cisco/aci/theory', k: 'external epg l3out l3extsubnet import-security export-rtctrl contracts', v: 'External EPG = policy, not routing' },
   { t: 'ACI access policies: VLAN pool, domain, AAEP', p: 'cisco/aci/theory', k: 'aaep domain vlan pool physical vmm l3 external access policy', v: 'VLAN pool -> Domain -> AAEP -> IntPG -> selector' },
 );
+
+// ═══════════════════════════════════════════════════════════════════
+// ASR1000 / IOS XE — crash, system report, dmesg (from a real case, anonymised)
+// ═══════════════════════════════════════════════════════════════════
+(function () {
+  const sub = TREE.find(t => t.id === 'cisco').subs.find(s => s.id === 'iosxe');
+  if (!sub.pages.some(p => p.id === 'asr-crash')) sub.pages.push({ id: 'asr-crash', label: 'ASR1000: crash & system report' });
+})();
+
+function pgASRCrash() {
+  return '<div class="ph"><div class="pt">ASR1000 / IOS XE &mdash; crash, system report &amp; dmesg</div>'
+    + '<div class="ps">After an unexpected reload: where the evidence is, how to read it, what to send to TAC</div>'
+    + '<div class="tags">' + tag('tp', 'Cisco') + tag('tp', 'ASR1000') + tag('tp', 'IOS XE') + tag('tr', 'Crash') + tag('ta', 'RCA') + '</div></div>'
+    + '<div class="content">'
+
+    + '<h2>1. First minutes after the reload</h2>'
+    + cb('IOS XE', `show version | include uptime|reason|image        # last reload reason
+show platform                                     # RP / ESP / SIP state, all "ok"?
+show logging | include ECC|ABORT|CRASH|crash|EZMAN|EXMEM
+dir bootflash:core/                               # system reports + core files, newest first
+dir crashinfo:                                    # older platforms / additional crash files
+show environment all                              # temperatures, voltages, PSUs`)
+    + co('a', '&#x26A0;&#xFE0F;', 'Save the evidence before anything else', 'Copy the newest <code>bootflash:core/*system-report*.tar.gz</code> (and core files) off the box, e.g. <code>copy bootflash:core/&lt;file&gt; scp://…</code>. A second crash or a cleanup can overwrite them.')
+
+    + '<h2>2. What is in a system report</h2>'
+    + '<p>IOS XE creates it automatically when a process crashes or a card reloads: a <code>.tar.gz</code> with trace logs, outputs of many show / Linux commands and the kernel log. Each file starts with a header like:</p>'
+    + cb('file', `**********************************
+OUTPUT OF dmesg
+**********************************
+…
+real	0m0.010s     <- the collector timed every command
+user	0m0.005s
+sys	0m0.006s`)
+    + tbl(['Look at', 'Why'], [
+      ['IOS log (<code>show logging</code> output in the report)', 'the actual error message, e.g. <code>%EZMAN_CLIENT-2-ECC_DOUBLE_BIT_ERROR</code>'],
+      ['process exit: <code>rc=134</code> / <code>SIGABRT</code>', 'the process aborted itself after detecting a fatal error (134 = 128 + signal 6)'],
+      ['trace logs of that process', 'what it did just before &mdash; usually read by TAC'],
+      ['dmesg (Linux kernel log of the RP)', 'hardware/driver events on the RP: NIC resets, disk, PCI. <strong>Data-plane (QFP/NP) memory errors are not here</strong> &mdash; they are logged by the IOS processes.'],
+    ])
+
+    + '<h2>3. Example timeline (real case, anonymised)</h2>'
+    + tbl(['Time (UTC)', 'Event'], [
+      ['day 0, 15:06', 'planned reload (upgrade to 17.9.x); kernel sets clock, NP manager process starts at 15:08'],
+      ['day 12, 13, 17, 22', 'dmesg: <code>NETDEV WATCHDOG: eth5 (igb): transmit queue 6 timed out</code> &rarr; <code>Reset adapter</code> &rarr; link up again'],
+      ['day 23, 16:56', '<code>%EZMAN_CLIENT-2-ECC_DOUBLE_BIT_ERROR</code> in the NP DRAM; process terminated <code>rc=134 (SIGABRT)</code>'],
+      ['day 23, 17:00', 'router reloads, system report generated, traffic restored'],
+    ])
+
+    + '<h2>4. ECC errors in one paragraph</h2>'
+    + tbl(['Type', 'Meaning', 'Action'], [
+      ['Single-bit (correctable)', 'memory corrected one flipped bit, traffic unaffected', 'watch counters; a rising rate means failing memory'],
+      ['Double-bit (uncorrectable)', 'data cannot be trusted &rarr; the process aborts &rarr; card / router reloads', 'TAC case; RMA if it repeats or TAC confirms hardware'],
+    ])
+    + cb('IOS XE', `show logging | include ECC
+show platform hardware qfp active infrastructure exmem statistics
+show environment all`)
+    + co('p', '&#x2139;&#xFE0F;', 'Do not over-interpret diagnostic values', 'Fields like Device/Bank/Row/Column = <code>0xFFFFFFFF</code> usually mean "could not be read" (the process was already aborting) &mdash; not proof of physical damage by themselves. One event can be a transient soft error; repeated events point to hardware. Let TAC decide on RMA.')
+
+    + '<h2>5. Reading dmesg</h2>'
+    + '<p>Timestamps are <strong>seconds since boot</strong>. Convert them with the epoch from the line <code>rtc_cmos … setting system clock to 2026-05-17T15:06:36 UTC (1779030396)</code>:</p>'
+    + cb('bash', `boot=1779030396                      # epoch from the rtc_cmos line
+for s in 1099774 1532589 1955969; do
+  echo "$s s -> $(date -u -d @$((boot + s)) '+%Y-%m-%d %H:%M UTC')"
+done
+# 1099774 s -> 2026-05-30 08:36 UTC   (dmesg can drift a few minutes — use ± a few minutes when correlating)`)
+    + tbl(['Line', 'Meaning'], [
+      ['<code>NETDEV WATCHDOG: eth5 (igb): transmit queue N timed out</code> + <code>Reset adapter</code>', 'a NIC of the RP stopped transmitting; the driver reset it (~0.1 s). On this box <code>eth5</code> was an <strong>internal</strong> link (MTU 2048, TIPC starts on it) &mdash; most likely the RP &harr; ESP/SIP control channel (derived). Correlate with control-plane flaps (BGP/BFD) at the same times.'],
+      ['<code>mgmtbr: port 1(eth2) …</code>', 'the management port (GigabitEthernet0) bridge &mdash; flapping during boot is normal'],
+      ['<code>BAR … failed to assign</code>, <code>can\'t claim BAR</code>', 'PCI resource messages at boot &mdash; normal'],
+      ['<code>SRBDS: Vulnerable</code>, <code>MMIO Stale Data: Unknown</code>', 'CPU vulnerability status &mdash; informational'],
+      ['<code>ata6: SATA link down</code>', 'no hard disk installed (eUSB bootflash only) &mdash; normal'],
+    ])
+
+    + '<h2>6. Open the TAC case with</h2>'
+    + '<ul style="margin:0 0 10px 22px"><li>the system report (<code>bootflash:core/…tar.gz</code>) and core files</li>'
+    + '<li><code>show tech-support</code> (and the platform variant if TAC asks), <code>show logging</code>, <code>show version</code>, <code>show inventory</code> (serial numbers)</li>'
+    + '<li>a short timeline (last planned reload, the error, the reload, recovery) in UTC</li>'
+    + '<li>other hardware observations in the same period (e.g. the NIC resets in dmesg) &mdash; two different hardware symptoms on one chassis support an RMA</li>'
+    + '<li>what you want: root cause + RMA decision</li></ul>'
+    + '</div>';
+}
+
+RENDERERS['cisco/iosxe/asr-crash'] = pgASRCrash;
+IDX.push(
+  { t: 'ASR1000 crash: system report & core files', p: 'cisco/iosxe/asr-crash', k: 'asr1000 crash reload system report bootflash core tar.gz crashinfo tac rma', v: 'dir bootflash:core/ — save, read, send to TAC' },
+  { t: 'ECC double-bit error (EZMAN / QFP)', p: 'cisco/iosxe/asr-crash', k: 'ecc double bit single bit ezman_client np5c qfp exmem sigabrt rc=134', v: 'Uncorrectable memory error → process abort → reload' },
+  { t: 'Read dmesg: convert timestamps, NIC reset', p: 'cisco/iosxe/asr-crash', k: 'dmesg timestamp seconds since boot epoch netdev watchdog igb reset adapter transmit queue timed out', v: 'date -u -d @$((boot + s))' },
+);
