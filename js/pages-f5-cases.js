@@ -167,6 +167,36 @@ save sys config                          # auto-sync pushes it to the peer`)
 // ═══════════════════════════════════════════════════════════════════
 // php2shell — CVE-2026-109618 / -109619 (K000163821)
 // ═══════════════════════════════════════════════════════════════════
+const PHP2SHELL = 'f5/sec/php2shell';
+defCmds(PHP2SHELL, [
+  // 1. applicability
+  { grp: 'applicability', lang: 'tmsh', cmd: 'tmsh show sys version', d: '', tags: ['f5', 'f5-cve'], k: 'which tmos version am i running vulnerable version' },
+  { grp: 'applicability', lang: 'tmsh', cmd: 'tmsh list sys provision one-line', d: 'ltm { level nominal }; others "{ }" = level none   [derived]', tags: ['f5', 'f5-cve'], k: 'which modules are provisioned is apm enabled' },
+  { grp: 'applicability', lang: 'tmsh', cmd: 'tmsh list sys provision apm all-properties', d: 'explicit APM level', tags: ['f5', 'f5-cve'], k: 'apm provisioned level' },
+  { grp: 'applicability', lang: 'tmsh', cmd: 'tmsh list ltm virtual one-line | grep -i access', d: 'virtual servers with an access profile', tags: ['f5', 'f5-cve'], k: 'which vs has access profile apm data plane exposed' },
+  // 2. mitigation
+  { grp: 'mitigation', lang: 'bash', cmd: `cat > /etc/php.ini.d/K000163821.ini << 'EOF'
+memory_limit = -1
+post_max_size = 8M
+upload_max_filesize = 7M
+session.upload_progress.enabled = 0
+EOF`, d: 'create the mitigation file (heredoc, not vi)', tags: ['f5', 'f5-cve'], k: 'php2shell mitigation php.ini create file workaround cve' },
+  { grp: 'mitigation', lang: 'bash', cmd: 'bigstart restart httpd', d: '', tags: ['f5', 'f5-cve'], k: 'restart web server tmui apply php ini' },
+  { grp: 'mitigation', lang: 'bash', cmd: 'bigstart restart httpd_sam', d: 'only with APM — drops webtop sessions   [F5]', tags: ['f5', 'f5-cve'], k: 'restart apm httpd sam webtop' },
+  { grp: 'mitigation', lang: 'bash', cmd: 'clsh bigstart restart httpd', d: 'multi-blade (VIPRION): on all blades; same for httpd_sam   [F5]', tags: ['f5', 'f5-cve'], k: 'viprion multi blade all blades restart' },
+  // 3. verify
+  { grp: 'verify', lang: 'bash', cmd: 'cat /etc/php.ini.d/K000163821.ini', d: '', tags: ['f5', 'f5-cve'], k: 'is the php mitigation in place show ini file' },
+  { grp: 'verify', lang: 'bash', cmd: 'ls -l --time-style=full-iso /etc/php.ini.d/K000163821.ini', d: '', tags: ['f5', 'f5-cve'], k: 'when was the ini file written mtime' },
+  { grp: 'verify', lang: 'bash', cmd: 'ps -eo pid,lstart,cmd | grep "[h]ttpd -D"', d: 'master httpd must have started AFTER the file mtime', tags: ['f5', 'f5-cve'], k: 'was httpd restarted after the change process start time' },
+  { grp: 'verify', lang: 'bash', cmd: 'php -i | grep -E "upload_progress.enabled|post_max_size|upload_max_filesize|memory_limit"', d: '', tags: ['f5', 'f5-cve'], k: 'are the php values active effective settings' },
+  { grp: 'verify', lang: 'bash', cmd: 'zgrep -i -E "php|\\.ini|syntax" /var/log/httpd/httpd_errors*', d: 'ini parser errors', tags: ['f5', 'f5-cve'], k: 'php ini syntax error httpd error log' },
+  // fix
+  { grp: 'fix', lang: 'bash', cmd: "sed -i '/^:wq!$/d' /etc/php.ini.d/K000163821.ini && bigstart restart httpd", d: 'fix a stray vi line in the file', tags: ['f5', 'f5-cve'], k: 'wq! line in file vi mistake remove line' },
+  // 5. after upgrade
+  { grp: 'after-upgrade', lang: 'bash', cmd: 'php --version', d: 'build date 23 Oct 2026', tags: ['f5', 'f5-cve'], k: 'is php patched build date scanner false positive' },
+  { grp: 'after-upgrade', lang: 'bash', cmd: 'rpm -q php --changelog | grep CVE-2026-109618', d: '', tags: ['f5', 'f5-cve'], k: 'backported fix proof changelog scanner 5.4.45' },
+]);
+
 function pgF5Php2shell() {
   return '<div class="ph"><div class="pt">php2shell &mdash; CVE-2026-109618 / -109619 on BIG-IP</div>'
     + '<div class="ps">Applicability, interim mitigation, how to verify it, after the upgrade. Source: F5 K000163821 (Final).</div>'
@@ -175,10 +205,7 @@ function pgF5Php2shell() {
     + co('p', '&#x2139;&#xFE0F;', 'Marking', '<strong>[F5]</strong> = stated in the F5 article. <strong>[derived]</strong> = own conclusion or only verified in practice. Always re-check the current version of K000163821 &mdash; fixed versions and mitigations can change.')
 
     + '<h2>1. Am I affected?</h2>'
-    + cb('tmsh', `tmsh show sys version
-tmsh list sys provision one-line                 # ltm { level nominal }; others "{ }" = level none   [derived]
-tmsh list sys provision apm all-properties       # explicit APM level
-tmsh list ltm virtual one-line | grep -i access  # virtual servers with an access profile`)
+    + cmdBlock(PHP2SHELL, 'applicability', 'tmsh')
     + tbl(['Vector', 'Condition', 'Auth needed', 'CVSS'], [
       ['APM data plane', 'APM provisioned <strong>and</strong> an access profile on a VS', 'no', '8.1 [F5]'],
       ['Control plane (TMUI)', 'all modules', 'yes', '7.5 [F5]'],
@@ -189,35 +216,21 @@ tmsh list ltm virtual one-line | grep -i access  # virtual servers with an acces
     ])
 
     + '<h2>2. Mitigation until the upgrade</h2>'
-    + cb('bash', `cat > /etc/php.ini.d/K000163821.ini << 'EOF'
-memory_limit = -1
-post_max_size = 8M
-upload_max_filesize = 7M
-session.upload_progress.enabled = 0
-EOF
-bigstart restart httpd
-bigstart restart httpd_sam        # only with APM — drops webtop sessions   [F5]
-# multi-blade (VIPRION): clsh bigstart restart httpd / httpd_sam      [F5]`)
+    + cmdBlock(PHP2SHELL, 'mitigation', 'bash')
     + '<ul style="margin:0 0 10px 22px"><li>Do it on <strong>every HA peer</strong>. The mitigation does <strong>not survive a TMOS upgrade</strong> [F5].</li>'
     + '<li>Covers the control plane and the APM data plane; restricting access is additional [F5].</li>'
     + '<li>Create the file with the heredoc above, not in vi &mdash; a stray <code>:wq!</code> line inside the file has really been seen [derived].</li></ul>'
 
     + '<h2>3. Verify the mitigation</h2>'
-    + cb('bash', `cat /etc/php.ini.d/K000163821.ini
-ls -l --time-style=full-iso /etc/php.ini.d/K000163821.ini
-ps -eo pid,lstart,cmd | grep "[h]ttpd -D"        # master httpd must have started AFTER the file mtime
-php -i | grep -E "upload_progress.enabled|post_max_size|upload_max_filesize|memory_limit"
-zgrep -i -E "php|\\.ini|syntax" /var/log/httpd/httpd_errors*   # ini parser errors`)
+    + cmdBlock(PHP2SHELL, 'verify', 'bash')
     + '<p>Expected: <code>Off</code> / <code>8M</code> / <code>7M</code> / <code>-1</code>. <code>php -i</code> shows the CLI configuration; that httpd reads the same directory is [derived].</p>'
-    + cb('bash', `# fix a stray vi line in the file
-sed -i '/^:wq!$/d' /etc/php.ini.d/K000163821.ini && bigstart restart httpd`)
+    + cmdBlock(PHP2SHELL, 'fix', 'bash')
 
     + '<h2>4. Who can reach TMUI / SSH?</h2>'
     + '<p>See <a href="#f5/sec/mgmt-exposure">TMUI / SSH exposure audit</a> &mdash; allow lists, self-IP port lockdown, proof from logs, optional restriction.</p>'
 
     + '<h2>5. After upgrading to a fixed version</h2>'
-    + cb('bash', `php --version                                    # build date 23 Oct 2026
-rpm -q php --changelog | grep CVE-2026-109618`)
+    + cmdBlock(PHP2SHELL, 'after-upgrade', 'bash')
     + '<ul style="margin:0 0 10px 22px"><li>PHP still reports <strong>5.4.45</strong> &mdash; the fix is backported. Vulnerability scanners will report a <strong>false positive</strong>; evidence: note 5 in K000163821 and K000133035 [F5].</li>'
     + '<li>The <code>.ini</code> disappears with the upgrade and is no longer needed on a fixed version [derived].</li></ul>'
     + '</div>';

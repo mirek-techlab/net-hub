@@ -5,6 +5,33 @@
   if (!sub.pages.some(p => p.id === 'case-partner')) sub.pages.push({ id: 'case-partner', label: 'Case: partner tunnel drops' });
 })();
 
+const VPN_CASE = 'cisco/vpn/case-partner';
+defCmds(VPN_CASE, [
+  // targeted VPN logging (no syslog access, busy box)
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging list VPN_DEBUG message 713001-713905', d: 'IKEv1 …', tags: ['cisco-asa', 'ipsec'], k: 'no syslog access vpn logging only ike messages logging list ikev1' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging list VPN_DEBUG message 713907-715999', d: '… without 713906 (very chatty on a busy NAT-T tunnel)', tags: ['cisco-asa', 'ipsec'], k: 'exclude chatty message 713906 nat-t spam' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging list VPN_DEBUG message 750001-751999', d: 'IKEv2 (e.g. 750001, 750003)', tags: ['cisco-asa', 'ipsec'], k: 'ikev2 syslog messages logging list' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging list VPN_DEBUG message 602303-602304', d: 'IPsec SA created / deleted', tags: ['cisco-asa', 'ipsec'], k: 'sa created deleted syslog' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging list VPN_DEBUG message 402114-402120', d: 'ESP with invalid SPI / not matching the SA policy (402116)', tags: ['cisco-asa', 'ipsec'], k: 'invalid spi esp wrong sa selector mismatch syslog' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging list VPN_DEBUG message 113019', d: 'session disconnected + duration + reason', tags: ['cisco-asa', 'ipsec'], k: 'tunnel down reason session disconnected lost service' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging buffer-size 4194304', d: '4 MB buffer', tags: ['cisco-asa'], k: 'local log buffer too small overwritten' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging buffered VPN_DEBUG', d: '', tags: ['cisco-asa'], k: 'log list to buffer' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'logging monitor VPN_DEBUG', d: '', tags: ['cisco-asa'], k: 'log list to ssh session monitor' },
+  { grp: 'logging', lang: 'Cisco ASA', cmd: 'terminal monitor', d: 'stream to this SSH session; log the session to a file', tags: ['cisco-asa'], k: 'see logs live in ssh session' },
+  { grp: 'logging-off', lang: 'Cisco ASA', cmd: 'terminal no monitor', d: '', tags: ['cisco-asa'], k: 'stop live logs in session' },
+  { grp: 'logging-off', lang: 'Cisco ASA', cmd: 'no logging monitor VPN_DEBUG', d: '', tags: ['cisco-asa'], k: 'remove monitor logging cleanup' },
+  { grp: 'logging-off', lang: 'Cisco ASA', cmd: 'show logging | include 713123|713259|750003|402116', d: 'DPD loss, teardown, IKEv2 retries, wrong SA', tags: ['cisco-asa', 'ipsec'], k: 'find dpd loss lost service in log buffer' },
+  // evidence that settled it
+  { grp: 'evidence', lang: 'Cisco ASA', cmd: 'capture <name> match ip any host <host-ip>', d: 'during the outage: "Capturing - 0 bytes" = no traffic in the tunnel', tags: ['cisco-asa', 'ipsec'], k: 'is traffic going through the tunnel capture host' },
+  { grp: 'evidence', lang: 'Cisco ASA', cmd: 'show capture <name>', d: '', tags: ['cisco-asa'], k: 'show capture packets' },
+  { grp: 'evidence', lang: 'Cisco ASA', cmd: 'show vpn-sessiondb l2l filter ipaddress <peer-ip>', d: 'Login Time / Duration = when the tunnel was last (re)built', tags: ['cisco-asa', 'ipsec'], k: 'when did the tunnel come up login time duration was the tunnel rebuilt proof' },
+  { grp: 'evidence', lang: 'Cisco ASA', cmd: 'show clock', d: 'compare with Login Time', tags: ['cisco-asa'], k: 'current time compare' },
+  { grp: 'evidence', lang: 'Cisco ASA', cmd: 'show crypto ipsec sa peer <peer-ip> | include ident|pkts|settings', d: 'selectors, encaps/decaps counters, IKE version per SA', tags: ['cisco-asa', 'ipsec'], k: 'which selectors encaps decaps counters ikev1 or ikev2 in use settings' },
+  // interim DPD relaxation
+  { grp: 'dpd', lang: 'Cisco ASA', cmd: `tunnel-group <peer-ip> ipsec-attributes
+ isakmp keepalive threshold 30 retry 5`, d: 'less strict DPD: do not tear down on short hiccups', tags: ['cisco-asa', 'ipsec'], k: 'dpd too aggressive tunnel drops keepalive threshold retry' },
+]);
+
 function pgCasePartnerVPN() {
   return '<div class="ph"><div class="pt">Case: partner site-to-site tunnel dropping every ~2 hours</div>'
     + '<div class="ps">Cisco ASA (our side) &harr; Palo Alto (partner, behind NAT), IKEv1. Short outages with auto-recovery, "you must have changed something", an unfinished IKEv2 migration on the partner side.</div>'
@@ -190,33 +217,17 @@ For the next expected outage, simultaneously on the partner side:
     + co('a', '&#x26A0;&#xFE0F;', 'Trust the logs, not the description', 'The partner\'s answer was "IKE mode auto &mdash; accepts both, but initiates in main" while their own log said <em>aggressive mode</em> as initiator. When a statement contradicts a log line, ask for the log, not for another statement.')
     + '<h3>Targeted VPN logging on the ASA (instead of a full debug)</h3>'
     + '<p>With no syslog access and a busy box, the default buffer was overwritten within minutes. A message list keeps only the IKE/IPsec messages, in a bigger buffer, and streams them to the SSH session (saved to a file on the jump host):</p>'
-    + cb('Cisco ASA', `logging list VPN_DEBUG message 713001-713905      ! IKEv1 …
-logging list VPN_DEBUG message 713907-715999      ! … without 713906 (very chatty on a busy NAT-T tunnel)
-logging list VPN_DEBUG message 750001-751999      ! IKEv2 (e.g. 750001, 750003)
-logging list VPN_DEBUG message 602303-602304      ! IPsec SA created / deleted
-logging list VPN_DEBUG message 402114-402120      ! ESP with invalid SPI / not matching the SA policy (402116)
-logging list VPN_DEBUG message 113019             ! session disconnected + duration + reason
-logging buffer-size 4194304                       ! 4 MB buffer
-logging buffered VPN_DEBUG
-logging monitor VPN_DEBUG
-terminal monitor                                  ! stream to this SSH session; log the session to a file
-
-! afterwards
-terminal no monitor
-no logging monitor VPN_DEBUG
-show logging | include 713123|713259|750003|402116`)
+    + cmdBlock(VPN_CASE, 'logging', 'Cisco ASA', '!')
+    + cmdBlock(VPN_CASE, 'logging-off', 'Cisco ASA — afterwards', '!')
     + co('a', '&#x26A0;&#xFE0F;', 'Mind the load', 'Keep the list narrow and remove the monitor logging when done &mdash; on a busy firewall a broad list (or debug level) floods the session and costs CPU. Restore the previous <code>logging buffered</code> / <code>logging monitor</code> settings.')
     + '<h3>The commands that settled it (ASA)</h3>'
-    + cb('Cisco ASA', `capture VA match ip any host 10.30.68.5          # during the outage: "Capturing - 0 bytes" = no traffic in the tunnel
-show capture VA
-
-show vpn-sessiondb l2l filter ipaddress 203.0.113.104
+    + cmdBlock(VPN_CASE, 'evidence', 'Cisco ASA')
+    + cb('example output', `show vpn-sessiondb l2l filter ipaddress 203.0.113.104
   Protocol     : IKEv1 IPsecOverNatT
   Encryption   : IKEv1: (1)AES128  IPsecOverNatT: (10)AES128
   Hashing      : IKEv1: (1)SHA1    IPsecOverNatT: (10)SHA1
   Login Time   : 12:59:32 UTC        <- tunnel was (re)built right at the reported outage
   Duration     : 0h:15m:51s
-show clock                                         # compare with Login Time
 
 show crypto ipsec sa peer 203.0.113.104 | include ident|pkts|settings
   local ident  (10.30.0.0/255.255.0.0)   remote ident (10.200.64.0/255.255.252.0)
@@ -228,8 +239,7 @@ show crypto ipsec sa peer 203.0.113.104 | include ident|pkts|settings
     + '</div></div>'
     + '<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Resolution</div>'
     + '<p>Interim step on our side: less strict DPD on the ASA so that it does not tear the tunnel down on short hiccups:</p>'
-    + cb('Cisco ASA', `tunnel-group 203.0.113.104 ipsec-attributes
- isakmp keepalive threshold 30 retry 5`)
+    + cmdBlock(VPN_CASE, 'dpd', 'Cisco ASA', '!')
     + '<p>Result: the drops still happened, only a few minutes later than before &mdash; expected, it only extends the time before the peer is declared dead. It confirmed that DPD loss was a symptom, not the cause.</p>'
     + '<p>Recommendation sent to the partner:</p>'
     + cb('message', `The IKE gateway on your side is configured with IKE mode "auto", which initiates
@@ -260,7 +270,6 @@ Alternatively, if IKEv1 must be kept, set the IKE mode explicitly to Main Mode.`
 
 RENDERERS['cisco/vpn/case-partner'] = pgCasePartnerVPN;
 IDX.push(
-  { t: 'ASA logging list for VPN troubleshooting', p: 'cisco/vpn/case-partner', k: 'asa logging list message 713001 715999 750001 602303 402116 113019 logging buffered monitor terminal monitor buffer-size', v: 'Only IKE/IPsec messages, bigger buffer, streamed to SSH' },
   { t: 'Case: partner tunnel drops every 2 hours (ASA <-> Palo Alto)', p: 'cisco/vpn/case-partner', k: 'case incident partner tunnel drops asa palo alto aggressive mode dpd selectors ikev2 migration', v: 'Full incident write-up with logs from both sides' },
 );
 
