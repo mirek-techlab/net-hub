@@ -235,6 +235,26 @@ diagnose debug enable
       ['later <code>Reason: Peer Terminate</code> / <code>User Requested</code>', 'the <strong>peer</strong> requested the deletion &mdash; not a DPD decision of our side'],
       ['<code>713172</code> / <code>713905</code>', 'new IKE SA: NAT detected on their side, NAT-T on UDP 4500 &mdash; tunnel back'],
     ])
+    + '<h3>The partner\'s log of the same outage (Palo Alto system log)</h3>'
+    + cb('Palo Alto system log (UTC, newest last)', `06:58:12 … 06:58:42  ike-recv-notify     IKE notification received: INVALID-SPI (11)          (every 6 s)
+08:59:55  ike-recv-p2-delete  IPsec SA delete message received from peer. SPI:0x…    (x10)
+08:59:55  ike-recv-p1-delete  phase-1 SA delete message received from peer
+08:59:55  ike-nego-p1-start   phase-1 negotiation started as INITIATOR, AGGRESSIVE mode.
+                              172.16.100.50[500]-203.0.113.90[500] cookie:…:0000000000000000
+08:59:56  ike-nego-p1-start   phase-1 negotiation started as RESPONDER, MAIN mode
+08:59:56  ike-nego-p1-expire  phase-1 SA is expired (old SA)
+09:00:20  ike-nego-p1-succ    phase-1 negotiation succeeded as RESPONDER, MAIN mode.
+                              172.16.100.50[4500]-203.0.113.90[4500] … lifetime 86400 Sec.
+09:00:27  ike-nego-p1-fail    phase-1 negotiation failed as INITIATOR, AGGRESSIVE mode … Due to timeout.`)
+    + tbl(['Lines', 'What it proves'], [
+      ['<code>INVALID-SPI</code> notifications two hours earlier', 'our ASA kept receiving ESP with SPIs it no longer had &rarr; the partner was still sending into an SA that our side had deleted &mdash; SA state out of sync long before the outage. On the ASA look for messages about ESP with an invalid/unknown SPI at the same times.'],
+      ['SA deletes received at 08:59:55', 'the ASA DPD teardown (08:59:56 in the ASA log) &mdash; both logs match within a second'],
+      ['p1 start as <strong>initiator, aggressive mode</strong> right after the delete', 'the "auto" gateway does initiate in Aggressive Mode &mdash; contrary to the partner\'s statement'],
+      ['p1 start as responder, main mode one second later', 'our ASA initiates in parallel &mdash; both sides race'],
+      ['succeeded as <strong>responder</strong>, main mode, port 4500', 'the tunnel came back because <strong>our</strong> ASA initiated it (NAT-T) &mdash; ~25 s'],
+      ['failed as initiator, aggressive mode, timeout', 'their own attempt never works: our side drops Aggressive Mode'],
+    ])
+    + co('t', '&#x1F4A1;', 'Ask for the partner\'s system log early', 'One screenshot of their IKE system log around the outage answered more than days of discussion: their mode, who rebuilt the tunnel, and that SAs were out of sync before. Ask for it in the first request.')
     + '<h3>Reading the IKE capture (Wireshark)</h3>'
     + cb('capture (simplified)', `13:14:10  OUR-ASA -> PEER  IKE_SA_INIT MID=00 Initiator Request     <- IKEv2, no answer
 13:14:10  OUR-ASA -> PEER  Identity Protection (Main Mode)          <- IKEv1 Main Mode
@@ -373,6 +393,7 @@ IDX.push(
   { t: 'ASA DPD loss: 713123 lost contact, 713259 lost service', p: 'theory/security/ike-nat', k: '713123 lost contact remote peer dpd keepalive 602304 713259 lost service 750003 ikev2 retransmissions', v: 'DPD declared peer dead → teardown → rebuild' },
   { t: 'Wireshark IKE: IKE_SA_INIT vs Identity Protection (Main Mode)', p: 'theory/security/ike-nat', k: 'wireshark isakmp ike_sa_init identity protection main mode aggressive quick mode ikev1 ikev2 capture', v: 'Which IKE version / mode is in the capture' },
   { t: 'ASA tries IKEv2 first, falls back to IKEv1', p: 'theory/security/ike-nat', k: 'asa crypto map ikev2 ikev1 fallback 750003 750001 retransmissions', v: 'Unanswered IKEv2 retries before IKEv1' },
+  { t: 'Palo Alto IKE system log: ike-nego-p1, INVALID-SPI', p: 'theory/security/ike-nat', k: 'palo alto system log ike-nego-p1-start ike-nego-p1-succ ike-nego-p1-fail ike-recv-p2-delete ike-recv-notify invalid-spi initiator responder', v: 'Who rebuilt the tunnel, which mode, SA out of sync' },
   { t: 'DPD mismatch drops tunnels', p: 'theory/security/ike-nat', k: 'dpd dead peer detection keepalive threshold retry mismatch one-way', v: 'Compare DPD on both sides' },
   { t: 'NAT-T UDP 500 -> 4500', p: 'theory/security/ike-nat', k: 'nat-t udp 4500 500 nat detection ipsec', v: 'First packet always UDP 500' },
 );
