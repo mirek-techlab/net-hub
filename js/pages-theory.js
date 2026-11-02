@@ -172,12 +172,17 @@ diagnose debug enable
     + '<h2>Case: the remote side "migrated" to IKEv2 &mdash; and back</h2>'
     + '<p style="color:var(--text2)">Real incident, anonymised. The partner changed their side without telling us; the tunnel became intermittent and their logs showed the message above.</p>'
     + '<div class="flow">'
-    + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">What they did</div><p>Switched their gateway to IKEv2 on their own, turned on aggressive mode, changed identity settings &mdash; and defined the traffic selectors <strong>per host (/32)</strong>, while our side protects whole networks (/16 and similar). When it did not come up, they switched back to IKEv1 &mdash; but kept much of the IKEv2 configuration (proposals, identity type, timers). The result was a mix that neither matched the old agreement nor a clean IKEv2 setup.</p></div></div>'
+    + '<div class="fs"><div class="fsn">1</div><div class="fsb"><div class="fst">What they did</div><p>Switched their gateway to IKEv2 on their own, turned on aggressive mode, changed identity settings &mdash; and defined the traffic selectors <strong>per host (/32)</strong>, while our side protects whole networks (/16 and similar). When it did not come up, they switched back to IKEv1 &mdash; but kept much of the IKEv2 configuration (proposals, identity type, timers). The result was a mix that neither matched the old agreement nor a clean IKEv2 setup.</p>'
+    + co('r', '&#x1F3AF;', 'Root cause found', 'Their Palo Alto IKE gateway was left on <strong>"auto"</strong>, and in this setup it <strong>initiated IKEv1 in Aggressive Mode</strong> first (their own log proves it). Our gateway does not permit Aggressive Mode &rarr; the packets were dropped &rarr; timeout. Nothing was wrong or changed on our side.')
+    + '</div></div>'
     + '<div class="fs"><div class="fsn">2</div><div class="fsb"><div class="fst">What it looked like</div>'
     + tbl(['Symptom', 'Explanation'], [
       ['phase 1 timeout as initiator, responder cookie 0', 'our side did not accept their packets (version / mode / ID did not match any config) &rarr; no reply'],
       ['their private IP in the log', 'IP-type identity sent from behind NAT'],
       ['intermittent', 'a repeating cycle &mdash; see below'],
+      ['drops around <strong>09:00</strong> and again before <strong>17:00</strong>, a few minutes each, fine the rest of the day', 'typical for a timer (SA lifetime / rekey) or for tunnels re-created when traffic starts after an idle period &mdash; not for a config change (a change breaks it permanently)'],
+      ['several countries / sites "down" in their monitoring at once', 'all behind the same tunnel; part of the red was unrelated ports &mdash; separate monitoring noise from real impact'],
+      ['partner: "you must have changed something"', 'nobody had &mdash; proven with the session data below'],
       ['no useful network documentation', 'their IP mapping list did not show the NAT or the change'],
     ])
     + '<h3>The cycle that made it "intermittent"</h3>'
@@ -185,9 +190,10 @@ diagnose debug enable
 2. partner falls back to IKEv1 AGGRESSIVE mode        -> our ASA drops it immediately (aggressive mode disabled)
                                                          = their log: "failed as initiator, aggressive mode … cookie …:0000 … timeout"
 3. IKEv1 eventually negotiates                         -> tunnel UP, traffic works for a while
-4. next phase 2 rekey / DPD event with the leftover    -> SA collapses (host vs subnet SAs, DPD tears it down)
-   IKEv2-era parameters
+4. next rekey initiated by the partner (or a new tunnel  -> partner again tries AGGRESSIVE mode -> dropped
+   after idle time), DPD event, host vs subnet SAs        -> SA collapses for a few minutes
 5. back to step 1`)
+    + co('p', '&#x1F4A1;', 'Why always the partner re-initiates (likely, verify)', 'The side with the <strong>shorter lifetime</strong> starts every rekey. Palo Alto\'s default IKE lifetime is 8 hours, an ASA IKEv1 policy defaults to 24 hours &mdash; so the Palo Alto rekeys first, every time, with its broken mode. Roughly 8 hours between the morning and the afternoon drop fits that. Compare <code>show crypto ikev1 sa detail</code> / <code>show crypto ipsec sa</code> lifetimes with the drop times.')
     + '<p>Every "it works again" was just step 3 &mdash; nothing had been fixed. The pattern only becomes visible when you line up <strong>tunnel up/down times</strong> with <strong>rekey lifetimes</strong> and the partner\'s change attempts.</p>'
     + '</div></div>'
     + '<div class="fs"><div class="fsn">3</div><div class="fsb"><div class="fst">How to recognise version / mode mismatch in debug</div>'
@@ -206,15 +212,44 @@ diagnose debug enable
       ['it works when the agreed parameters are used', 'a successful SA from the same peer when your side initiates (or from the time before their change)'],
       ['timeline', 'first failure time vs. their change window &mdash; ask them for their change log'],
     ])
+    + '<h3>The commands that settled it (ASA)</h3>'
+    + cb('Cisco ASA', `capture VA match ip any host 10.30.68.5          # during the outage: "Capturing - 0 bytes" = no traffic in the tunnel
+show capture VA
+
+show vpn-sessiondb l2l filter ipaddress 203.0.113.104
+  Protocol     : IKEv1 IPsecOverNatT
+  Encryption   : IKEv1: (1)AES128  IPsecOverNatT: (10)AES128
+  Hashing      : IKEv1: (1)SHA1    IPsecOverNatT: (10)SHA1
+  Login Time   : 12:59:32 UTC        <- tunnel was (re)built right at the reported outage
+  Duration     : 0h:15m:51s
+show clock                                         # compare with Login Time
+
+show crypto ipsec sa peer 203.0.113.104 | include ident|pkts|settings
+  local ident  (10.30.0.0/255.255.0.0)   remote ident (192.0.2.64/255.255.252.0)
+  #pkts encaps: 142271  #pkts decaps: 82780        <- both directions counting
+  in use settings ={L2L, Tunnel, NAT-T-Encaps, PFS Group 5, IKEv1, }`)
+    + co('t', '&#x1F50E;', 'Login Time is the key evidence', '<code>Login Time</code> / <code>Duration</code> in <code>show vpn-sessiondb</code> tell you exactly when the tunnel was last (re)established. If that matches the outage and your change log is empty, the tunnel went down and was rebuilt &mdash; without anyone touching your side.')
+    + co('a', '&#x26A0;&#xFE0F;', 'Many SAs, easy to misread', 'With ten local subnets there are ten SA blocks per peer. Filter on one ident before reading "in use settings" &mdash; it is easy to look at the wrong block (e.g. think it runs IKEv2 when it is IKEv1).')
     + '<p>Send the capture summary + debug lines + timeline in one message. Facts from your own gateway end the "it is your firewall" discussion much faster than describing the config.</p>'
     + '</div></div>'
     + '<div class="fs"><div class="fsn">5</div><div class="fsb"><div class="fst">Resolution</div>'
-    + '<p>After the evidence was shared, the partner switched back to <strong>Main Mode</strong> and adjusted <strong>DPD</strong>; the VPN has been stable since. A proper IKEv2 migration is to be planned jointly.</p>'
+    + '<p>Recommendation sent to the partner:</p>'
+    + cb('message', `The IKE gateway on your side is configured with IKE mode "auto", which initiates
+IKEv1 Aggressive Mode as the first option. Our gateway does not permit Aggressive
+Mode - hence the timeout and the log you see. No changes are required on our side.
+
+Recommended: switch the gateway to IKEv2, which is already supported and configured
+on our side for this peer.
+Alternatively, if IKEv1 must be kept, set the IKE mode explicitly to Main Mode.`)
+    + '<p>The partner set <strong>Main Mode</strong> and adjusted <strong>DPD</strong>; the VPN has been stable since. They still could not say what triggered it &mdash; a joint IKEv2 migration is to be planned.</p>'
     + co('a', '&#x26A0;&#xFE0F;', 'DPD mismatch alone can drop tunnels', 'Very aggressive DPD on one side (short interval, few retries) tears the SA down on a short packet loss, while the other side still uses it &rarr; one-way traffic until the next rekey. Compare DPD interval / retries on both sides (ASA: <code>isakmp keepalive threshold … retry …</code> in the tunnel-group).')
     + '</div></div>'
     + '<div class="fs"><div class="fsn">6</div><div class="fsb"><div class="fst">Fix and lesson</div>'
     + '<ul style="margin:0 0 6px 20px"><li>Agree <strong>one</strong> parameter set in writing and have both sides fill it: IKE version, mode, auth (PSK/cert), local + remote IKE ID (type and value), public IPs (after NAT), phase 1 and 2 proposals, lifetimes, DPD, NAT-T, PFS, protected subnets.</li>'
     + '<li>Ask the partner for their <strong>current running config</strong> of the tunnel (sanitised), not their intention.</li>'
+    + '<li>Never leave mode/version on <strong>auto</strong> for a site-to-site peer &mdash; set exactly what was agreed (version, Main Mode, proposals).</li>'
+    + '<li>Align <strong>lifetimes</strong> (or at least know which side rekeys first) and DPD settings.</li>'
+    + '<li>Take the chance to retire weak parameters: this tunnel still ran IKEv1 + AES128/SHA1 + DH group 5 &mdash; target IKEv2, AES-GCM, DH 19/20.</li>'
     + '<li>An IKE version migration is a <strong>synchronised event</strong>, not a one-sided experiment: agreed window, both sides online, same new parameter set, rollback plan &mdash; and leftovers of the other version removed completely.</li></ul>'
     + '</div></div>'
     + '</div>'
@@ -256,6 +291,8 @@ IDX.push(
   { t: 'Case: partner half-migrated IKEv1 -> IKEv2 and back', p: 'theory/security/ike-nat', k: 'ikev2 ikev1 migration mismatch invalid_major_version intermittent tunnel partner leftover config parameter sheet', v: 'Mixed config, intermittent tunnel, agree one parameter set' },
   { t: 'ASA phase 2 rekey delete: old vs new SPI', p: 'theory/security/ike-nat', k: 'asa 713041 713049 713120 715009 rekey phase 2 delete spi old sa cleanup host-to-host proxy id selector palo alto', v: 'Delete with an old SPI = normal cleanup' },
   { t: 'Host /32 vs subnet /16 selectors (narrowing)', p: 'theory/security/ike-nat', k: 'traffic selector narrowing rfc 7296 proxy id subset host /32 /16 crypto acl mirror ikev2', v: 'Mismatched selectors → host SAs, rekey collisions' },
+  { t: 'show vpn-sessiondb Login Time as evidence', p: 'theory/security/ike-nat', k: 'show vpn-sessiondb l2l filter ipaddress login time duration tunnel rebuilt evidence asa capture 0 bytes', v: 'When the tunnel was last (re)established' },
+  { t: 'Palo Alto IKE gateway auto -> aggressive mode', p: 'theory/security/ike-nat', k: 'palo alto ike gateway auto exchange mode aggressive main ikev2 lifetime 8 hours rekey', v: 'Set Main Mode / IKEv2 explicitly' },
   { t: 'DPD mismatch drops tunnels', p: 'theory/security/ike-nat', k: 'dpd dead peer detection keepalive threshold retry mismatch one-way', v: 'Compare DPD on both sides' },
   { t: 'NAT-T UDP 500 -> 4500', p: 'theory/security/ike-nat', k: 'nat-t udp 4500 500 nat detection ipsec', v: 'First packet always UDP 500' },
 );
