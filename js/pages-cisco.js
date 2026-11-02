@@ -431,6 +431,7 @@ function pgNXDiscards() {
     + '<div class="content">'
     + '<p>Example: a VRF uplink to a WAN router over <code>port-channel10</code> = 2 &times; 10G (<code>Eth1/11</code>, <code>Eth2/11</code>, on two line cards). Queuing templates <code>4q8e</code> / <code>1p3q1t-8e</code> / <code>2q4t-8e</code> are Nexus 7000/7700 style.</p>'
 
+    + co('r', '&#x1F3AF;', 'Real case: the drops here were a red herring', 'Problem: slow / lossy transfers between a mainframe and a remote site. The ingress drops on this 10G uplink led to a microburst theory &mdash; but the real bottleneck was <strong>further along the WAN path: a ~100 Mbit/s link</strong> (as remembered). Local discards were tiny compared to the traffic volume; the path was limited by its narrowest link. Check the whole path before tuning the first box.')
     + '<h2>1. Error counters</h2>'
     + cb('NX-OS', `show interface port-channel 10 counters errors
 show interface ethernet 1/11 counters errors`)
@@ -488,7 +489,15 @@ IP: src-dst ip rotate 0`)
     ])
     + co('p', '&#x2139;&#xFE0F;', 'Note', '<code>show port-channel traffic</code> shows shares since the member counters were last cleared &mdash; clear them for a current picture.')
 
-    + '<h2>4. SVI counters</h2>'
+    + '<h2>4. Look at the whole path</h2>'
+    + tbl(['Step', 'How'], [
+      ['list every hop and link between both ends', '<code>traceroute vrf &lt;vrf&gt; &lt;dst&gt;</code> from the switch, plus the WAN provider\'s path / topology'],
+      ['find the <strong>narrowest link</strong> and its utilisation', 'interface speed and load on each hop (monitoring graphs, <code>show interface … | include rate|BW</code>); ask the WAN provider for the contracted bandwidth and their utilisation / drops'],
+      ['measure real throughput end to end', 'iperf (or a file transfer) between hosts near both ends &mdash; if it tops out around one link speed (e.g. ~100 Mbit/s), you found the bottleneck'],
+      ['compare with the drops you see locally', 'a few thousand drops on a 10G port do not explain a slow 100 Mbit/s path &mdash; relative numbers matter'],
+    ])
+    + co('t', '&#x1F4A1;', 'Rule of thumb', 'Throughput of one path = its slowest link (minus overhead). Local queue drops are worth chasing only when their <strong>increase</strong> matches the time of the problem.')
+    + '<h2>5. SVI counters</h2>'
     + cb('NX-OS', `show interface vlan 552`)
     + cb('output (shortened)', `Vlan552 is up, line protocol is up
   Internet Address is 100.96.144.130/26
@@ -502,5 +511,6 @@ RENDERERS['cisco/nxos/discards'] = pgNXDiscards;
 IDX.push(
   { t: 'NX-OS InDiscards / OutDiscards on port-channel', p: 'cisco/nxos/discards', k: 'nexus nx-os indiscards outdiscards counters errors port-channel discards drops', v: 'Ingress queue drops vs egress discards' },
   { t: 'NX-OS queuing: show policy-map interface dropped', p: 'cisco/nxos/discards', k: 'nexus 7000 4q8e 1p3q1t 2q4t queuing policy-map interface queue dropped cos', v: 'Read per-queue drops; clear and measure the increase' },
+  { t: 'Case: bottleneck further in the WAN (~100 Mbit/s), not local drops', p: 'cisco/nxos/discards', k: 'mainframe slow transfer bottleneck wan 100 mb narrowest link microburst red herring iperf traceroute', v: 'Check the whole path before tuning the first box' },
   { t: 'Port-channel load balance src-dst ip-l4port', p: 'cisco/nxos/discards', k: 'show port-channel traffic load-balance src-dst ip l4port hash imbalance rx tx', v: 'Rx imbalance is the neighbour hash' },
 );
