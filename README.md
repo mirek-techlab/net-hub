@@ -30,7 +30,9 @@ Static site — no server, no build step. Open `index.html` or publish with GitH
 index.html        page layout + styles
 js/content.js     technology tree, older built-in pages (Cisco ASA/VPN), concept search keywords (IDX)
 js/commands.js    command registry (defCmds), cheat sheets, cmdBlock / cmdTable, caseRender template
-js/edu.js         study tracks (ENCC, Nokia DCF), topic status, roadmap
+js/edu.js         study tracks (ENCC, Nokia DCF), topic status, roadmap, loader for topic files
+edu/manifest.js   list of Edu topic files to load
+edu/<track>/<id>.js  one study-notes file per topic (format below)
 js/pages-*.js     built-in reference pages per vendor (cisco, fortinet, f5, f5 cases & CVEs, theory, testing tools, cases)
 tools/            helper scripts, e.g. f5-test-members.sh (test pool members from the BIG-IP)
 js/app.js         navigation, editor, .txt import, custom pages, search, mind map, backup
@@ -83,3 +85,48 @@ RENDERERS['cisco/asa/case-x'] = () => caseRender({
 **Anonymise everything** — the repository is public: no customer or company names, people, hostnames,
 serial numbers, ticket/change numbers, internal URLs or real IP addresses. Use documentation ranges
 (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 10.x) or placeholders like `<self-ip>`, `<rd>`.
+
+### Edu topic files
+Finished study notes for one exam topic = **one file**, dropped in without code changes.
+
+1. Save it as `edu/<track>/<topic id>.js`, e.g. `edu/encc/3.1.js` or `edu/nokia/o2.1.js`.
+   Track ids: `encc`, `nokia`. Topic ids are the ones shown on the Edu pages (`1.1` … `5.4`; Nokia `o1.1` … `o3.3`).
+2. Add one line to `edu/manifest.js`: `'encc/3.1',`
+3. Reload the page. The notes appear under the topic on its domain page (*Edu › ENCC › 3.0 …*),
+   marked "📘 study notes" in the topic list; commands go into the registry (cheat sheets, Ctrl+K, mind map).
+
+File content — one call:
+
+```js
+eduTopic('encc', '3.1', {
+  updated: '2026-11-02',                 // optional
+  summary: 'One sentence.',               // required
+  body: `                                 // required, Markdown
+## Heading
+Text from a vendor doc [documented][1]. My own conclusion [derived].
+- bullet
+\`inline code\` and fenced code blocks work.
+`,
+  sources: [ { id: 1, title: 'Document title — chapter', url: 'https://…' } ],   // [1] in the body links here
+  commands: [ { cmd: 'show crypto ikev2 sa', d: 'what it shows', tags: ['ipsec', 'cisco-iosxe'],
+                k: 'how I would remember the problem', grp: 'verify', lang: 'IOS XE' } ],
+  links: ['cisco/vpn/case-partner'],      // optional, NET_HUB route ids
+});
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `summary` | yes | one sentence, plain text |
+| `body` | yes | Markdown: `## ` headings, `-` lists, `` `code` ``, ``` blocks, links. `[documented]` / `[derived]` become badges; `[n]` links to source `n` (not inside code) |
+| `sources` | no | `{ id, title, url? }` — `id` matches `[n]` in the body |
+| `commands` | no | same fields as `defCmds` (`cmd`, `d` required; `tags`, `k`, `grp`, `lang` optional). Tags: see `TAG_META` in `js/commands.js`; unknown tags go to *Cheat sheets › Other* |
+| `links` | no | route ids of related NET_HUB pages |
+| `updated` | no | date string shown next to the summary |
+
+Errors (unknown topic id, missing `summary`/`body`, a command without `cmd`/`d`, a file in the manifest that
+cannot be loaded) are shown in red on the track overview and on the topic itself.
+`edu/encc/3.1.js` is a skeleton with placeholder text — replace it with the real notes.
+
+**Rules:** public repository — no customer/company names, hostnames, real IPs or accounts; use placeholders
+(`<peer-ip>`, `<self-ip>`). Do not copy vendor exam material (questions, answers, practice exams); describe in your
+own words and link the official source.

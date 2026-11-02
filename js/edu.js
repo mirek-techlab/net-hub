@@ -9,36 +9,36 @@ const EDU_TRACKS = {
     official: true,
     facts: [
       ['Exam', '300-440 ENCC, 90 minutes'],
-      ['Counts toward', 'CCNP Enterprise (concentration exam)'],
+      ['Associated with', 'CCNP Enterprise certification'],
       ['Outline source', 'Cisco exam topics PDF v1.0 (7/2025)'],
     ],
     domains: [
       { id: 'd1', n: '1.0', label: 'Architecture Models', w: 15, topics: [
-        { id: '1.1', t: 'Internet connectivity to AWS / Azure / GCP: native IPsec; Catalyst SD-WAN', gap: ['cloud', 'sdwan'], links: ['theory/security/ike-nat', 'cisco/vpn/theory'], cheats: ['ipsec'] },
-        { id: '1.2', t: 'Private connectivity: MPLS provider; colocation; SDCI regional cross-connect', gap: ['cloud'], links: ['cisco/nxos/case-mainframe'] },
-        { id: '1.3', t: 'SaaS: direct internet access; via cloud security provider; via centralized internet gateway; dedicated connectivity', gap: ['cloud'], links: ['tools/http/curl', 'theory/security/tls'] },
+        { id: '1.1', lv: 'Describe', t: 'Internet connectivity to AWS / Azure / GCP: native IPsec; Catalyst SD-WAN', gap: ['cloud', 'sdwan'], links: ['theory/security/ike-nat', 'cisco/vpn/theory'], cheats: ['ipsec'] },
+        { id: '1.2', lv: 'Describe', t: 'Private connectivity: MPLS provider; colocation; SDCI regional cross-connect', gap: ['cloud'], links: ['cisco/nxos/case-mainframe'] },
+        { id: '1.3', lv: 'Describe', t: 'SaaS: direct internet access; via cloud security provider; via centralized internet gateway; dedicated connectivity', gap: ['cloud'], links: ['tools/http/curl', 'theory/security/tls'] },
       ] },
       { id: 'd2', n: '2.0', label: 'Design', w: 15, topics: [
-        { id: '2.1', t: 'HA, resiliency, SLAs, reliability', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'f5/ltm/workflow'] },
-        { id: '2.2', t: 'Bandwidth, QoS, dedicated vs shared, multi-homing, routing', gap: ['cloud'], links: ['cisco/nxos/discards', 'cisco/nxos/case-mainframe'] },
-        { id: '2.3', t: 'Regulatory compliance (NIST, FedRAMP, ISO)', gap: ['cloud'], links: [] },
-        { id: '2.4', t: 'Cloud security policies AWS / Azure / GCP (east/west, internet backhaul, inbound)', gap: ['cloud'], links: ['f5/sec/mgmt-exposure'] },
+        { id: '2.1', lv: 'Recommend', t: 'HA, resiliency, SLAs, reliability', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'f5/ltm/workflow'] },
+        { id: '2.2', lv: 'Recommend', t: 'Bandwidth, QoS, dedicated vs shared, multi-homing, routing', gap: ['cloud'], links: ['cisco/nxos/discards', 'cisco/nxos/case-mainframe'] },
+        { id: '2.3', lv: 'Recommend', t: 'Regulatory compliance (NIST, FedRAMP, ISO)', gap: ['cloud'], links: [] },
+        { id: '2.4', lv: 'Describe', t: 'Cloud security policies AWS / Azure / GCP (east/west, internet backhaul, inbound)', gap: ['cloud'], links: ['f5/sec/mgmt-exposure'] },
       ] },
       { id: 'd3', n: '3.0', label: 'IPsec Cloud Connectivity', w: 25, topics: [
-        { id: '3.1', t: 'GRE/IPsec from on-prem IOS XE to a native cloud endpoint / secure internet gateway', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'theory/security/ike-nat', 'cisco/vpn/setup'], cheats: ['ipsec'] },
-        { id: '3.2', t: 'IPsec from on-prem IOS XE to cloud-hosted IOS XE', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'theory/security/ike-nat', 'cisco/vpn/theory'], cheats: ['ipsec'] },
-        { id: '3.3', t: 'IOS XE routing for cloud (BGP, OSPF, redistribution, static)', gap: [], links: ['cisco/iosxe/routing', 'theory/routing/bgp'] },
+        { id: '3.1', lv: 'Configure', t: 'GRE/IPsec from on-prem IOS XE to a native cloud endpoint / secure internet gateway', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'theory/security/ike-nat', 'cisco/vpn/setup'], cheats: ['ipsec'] },
+        { id: '3.2', lv: 'Configure', t: 'IPsec from on-prem IOS XE to cloud-hosted IOS XE', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'theory/security/ike-nat', 'cisco/vpn/theory'], cheats: ['ipsec'] },
+        { id: '3.3', lv: 'Configure', t: 'IOS XE routing for cloud (BGP, OSPF, redistribution, static)', gap: [], links: ['cisco/iosxe/routing', 'theory/routing/bgp'] },
       ] },
       { id: 'd4', n: '4.0', label: 'SD-WAN Cloud Connectivity', w: 25, topics: [
-        { id: '4.1', t: 'Catalyst SD-WAN secure cloud connectivity to AWS / Azure / GCP / SIG', gap: ['sdwan', 'cloud'], links: [] },
-        { id: '4.2', t: 'Catalyst SD-WAN OnRamp to SaaS', gap: ['sdwan', 'cloud'], links: [] },
-        { id: '4.3', t: 'Catalyst SD-WAN policies (N/S, E/W): security, routing, application', gap: ['sdwan'], links: [] },
+        { id: '4.1', lv: 'Configure', t: 'Catalyst SD-WAN secure cloud connectivity to AWS / Azure / GCP / SIG', gap: ['sdwan', 'cloud'], links: [] },
+        { id: '4.2', lv: 'Configure', t: 'Catalyst SD-WAN OnRamp to SaaS', gap: ['sdwan', 'cloud'], links: [] },
+        { id: '4.3', lv: 'Configure', t: 'Catalyst SD-WAN policies (N/S, E/W): security, routing, application', gap: ['sdwan'], links: [] },
       ] },
       { id: 'd5', n: '5.0', label: 'Operation', w: 20, topics: [
-        { id: '5.1', t: 'Diagnose IPsec cloud connectivity from IOS XE', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'theory/security/ike-nat', 'tools/tcp/errors'], cheats: ['ipsec', 'cisco-asa'] },
-        { id: '5.2', t: 'Diagnose IOS XE routing for cloud', gap: [], links: ['cisco/iosxe/routing', 'cisco/iosxe/asr-crash'] },
-        { id: '5.3', t: 'Diagnose Catalyst SD-WAN cloud connectivity', gap: ['sdwan'], links: [] },
-        { id: '5.4', t: 'Diagnose SD-WAN policy issues: security, routing, application', gap: ['sdwan'], links: [] },
+        { id: '5.1', lv: 'Diagnose', t: 'Diagnose IPsec cloud connectivity from IOS XE', gap: ['cloud'], links: ['cisco/vpn/case-partner', 'theory/security/ike-nat', 'tools/tcp/errors'], cheats: ['ipsec', 'cisco-asa'] },
+        { id: '5.2', lv: 'Diagnose', t: 'Diagnose IOS XE routing for cloud', gap: [], links: ['cisco/iosxe/routing', 'cisco/iosxe/asr-crash'] },
+        { id: '5.3', lv: 'Diagnose', t: 'Diagnose Catalyst SD-WAN cloud connectivity', gap: ['sdwan'], links: [] },
+        { id: '5.4', lv: 'Diagnose', t: 'Diagnose SD-WAN policy issues: security, routing, application', gap: ['sdwan'], links: [] },
       ] },
     ],
   },
@@ -128,6 +128,7 @@ function pgEduOverview(k) {
     + '<div class="content">'
     + outlineNote(tr)
     + tbl(['', ''], tr.facts)
+    + eduFilesInfo(k)
     + '<h2>Progress</h2><div class="prog-row" data-prog="' + k + '|">' + progBar(eduProgress(k)) + '</div>'
     + tbl([tr.official ? 'Domain' : 'Area', tr.official ? 'Weight' : '', 'Progress'], tr.domains.map(d => [
       '<a href="#edu/' + k + '/' + d.id + '">' + d.n + ' ' + d.label + '</a>',
@@ -152,11 +153,16 @@ function pgEduDomain(k, did) {
     + '<div class="prog-row" data-prog="' + k + '|' + d.id + '">' + progBar(eduProgress(k, d.id)) + '</div>'
     + tbl(['Topic', 'Status', 'Related in NET_HUB'], d.topics.map(t => {
       const key = k + '/' + t.id, st = eduGet(key);
-      return ['<strong>' + t.id.replace(/^o/, '') + '</strong> ' + t.t + '<div class="edu-gaps">' + (t.gap || []).map(g => tag(EDU_GAP[g][0], EDU_GAP[g][1])).join('') + '</div>',
+      const has = EDU_CONTENT[key];
+      return ['<strong>' + t.id.replace(/^o/, '') + '</strong> ' + t.t + '<div class="edu-gaps">'
+        + (t.lv ? '<span class="tag tlv" title="Level from the official exam topic list">' + t.lv + '</span>' : '')
+        + (t.gap || []).map(g => tag(EDU_GAP[g][0], EDU_GAP[g][1])).join('')
+        + (has ? '<a class="tag tnotes" onclick="document.getElementById(\'edu-n-' + t.id.replace(/\./g, '-') + '\').scrollIntoView({behavior:\'smooth\'})">&#x1F4D8; study notes &darr;</a>' : '') + '</div>',
         '<select class="edu-st st-' + st + '" onchange="eduSet(\'' + key + '\',this.value,this)">' + EDU_ST.map(s => '<option' + (s === st ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>',
         eduLinks(t)];
     }))
-    + '<p class="view-hint">Study notes for this domain go into the Notes section below (Edit).</p>'
+    + d.topics.filter(t => EDU_CONTENT[k + '/' + t.id]).map(t => eduNotesHTML(k, d, t)).join('')
+    + '<p class="view-hint">Own quick notes for this domain: Notes section below (Edit). Finished study notes: one file per topic, see README &rsaquo; Edu topic files.</p>'
     + '</div>';
 }
 function pgEduRoadmap() {
@@ -192,5 +198,89 @@ function eduSearchDocs() {
     hay: (EDU_TRACKS[k].label + ' ' + t.id + ' ' + t.t + ' ' + (t.gap || []).join(' ') + ' study exam edu').toLowerCase(),
     v: d.n + ' ' + d.label, kind: 'topic'
   }))));
+  Object.keys(EDU_CONTENT).forEach(key => {
+    const c = EDU_CONTENT[key], txt = htmlToText(c.summary + '\n' + c.body);
+    out.push({ p: c.route, t: EDU_TRACKS[c.track].label + ' ' + c.id.replace(/^o/, '') + ' (study notes)', hay: txt.toLowerCase(), raw: txt, kind: 'text' });
+  });
   return out;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Edu topic files: edu/<track>/<topic>.js, listed in edu/manifest.js
+// Each file calls eduTopic('<track>', '<topic id>', { … }) — format in README › Edu topic files.
+// ═══════════════════════════════════════════════════════════════════
+const EDU_CONTENT = {};
+const EDU_ERRORS = [];
+let EDU_FILES_LOADED = [];
+
+function eduFind(track, id) {
+  const tr = EDU_TRACKS[track]; if (!tr) return null;
+  for (const d of tr.domains) { const t = d.topics.find(x => x.id === id); if (t) return { tr, d, t } }
+  return null;
+}
+function eduTopic(track, id, data) {
+  const where = 'edu/' + track + '/' + id + '.js';
+  const f = eduFind(track, id);
+  if (!f) { EDU_ERRORS.push(where + ': unknown track or topic id "' + track + '/' + id + '"'); return }
+  const errs = [];
+  if (!data || typeof data !== 'object') { EDU_ERRORS.push(where + ': second argument must be an object'); return }
+  if (typeof data.summary !== 'string' || !data.summary.trim()) errs.push('missing "summary" (string)');
+  if (typeof data.body !== 'string' || !data.body.trim()) errs.push('missing "body" (Markdown string)');
+  (data.sources || []).forEach((x, i) => { if (!x || x.id === undefined || !x.title) errs.push('sources[' + i + '] needs "id" and "title"') });
+  (data.commands || []).forEach((c, i) => { if (!c || !c.cmd || !c.d) errs.push('commands[' + i + '] needs "cmd" and "d"') });
+  const route = 'edu/' + track + '/' + f.d.id;
+  EDU_CONTENT[track + '/' + id] = Object.assign({ track, id, route, sources: [], commands: [], links: [] }, data, { errors: errs });
+  if (errs.length) EDU_ERRORS.push(where + ': ' + errs.join('; '));
+  const ok = (data.commands || []).filter(c => c && c.cmd && c.d);
+  if (ok.length) defCmds(route, ok.map(c => Object.assign({ tags: [], k: '', grp: 'edu-' + id, lang: '' }, c, { topic: id })));
+}
+// Markdown → HTML (same converter as the .txt import), then [documented] / [derived] badges and [n] source refs.
+// Code blocks and inline code are left untouched.
+function eduMarkers(html, key) {
+  return html.split(/(<pre>[\s\S]*?<\/pre>|<code>[\s\S]*?<\/code>)/).map((part, i) => i % 2 ? part : part
+    .replace(/\[documented\]/g, '<span class="badge b-documented">[documented]</span>')
+    .replace(/\[derived\]/g, '<span class="badge b-derived">[derived]</span>')
+    .replace(/\[(\d+)\]/g, '<sup class="src-ref"><a onclick="var e=document.getElementById(\'' + key + '-src-$1\');if(e)e.scrollIntoView({behavior:\'smooth\'})">[$1]</a></sup>')).join('');
+}
+function eduNotesHTML(track, d, t) {
+  const c = EDU_CONTENT[track + '/' + t.id], key = 'edu-' + track + '-' + t.id.replace(/\./g, '-');
+  const cmds = CMDS.filter(x => x.page === c.route && x.topic === t.id);
+  return '<div class="edu-notes" id="edu-n-' + t.id.replace(/\./g, '-') + '">'
+    + '<h2>' + t.id.replace(/^o/, '') + ' &mdash; study notes</h2>'
+    + (c.errors.length ? co('r', '&#x26A0;&#xFE0F;', 'Problem in this topic file', esc(c.errors.join('; '))) : '')
+    + '<p class="edu-sum">' + esc(c.summary || '') + (c.updated ? ' <span class="case-note">updated ' + esc(c.updated) + '</span>' : '') + '</p>'
+    + '<div class="edu-body">' + eduMarkers(mdToHtml(c.body || ''), key) + '</div>'
+    + (cmds.length ? '<h3>Commands</h3>' + cmdTable(cmds, {}) : '')
+    + (c.sources.length ? '<h3>Sources</h3><ol class="edu-src">' + c.sources.map(x => '<li id="' + key + '-src-' + esc(String(x.id)) + '" value="' + (parseInt(x.id) || '') + '">'
+      + (x.url ? '<a href="' + esc(safeUrl(x.url)) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' : esc(x.title)) + '</li>').join('') + '</ol>' : '')
+    + ((c.links || []).length ? '<h3>Related in NET_HUB</h3><p>' + c.links.filter(r => findRoute(r).tech).map(r => '<a href="#' + r + '">' + esc(routeLabelShort(r)) + '</a>').join(' &middot; ') + '</p>' : '')
+    + '</div>';
+}
+function eduFilesInfo(track) {
+  const files = Object.keys(EDU_CONTENT).filter(k => k.startsWith(track + '/'));
+  const errs = EDU_ERRORS.filter(e => e.startsWith('edu/' + track + '/') || !/^edu\/[^/]+\//.test(e));
+  return (files.length ? '<p class="view-hint">&#x1F4D8; Study notes loaded for: ' + files.map(k => {
+    const c = EDU_CONTENT[k]; return '<a href="#' + c.route + '">' + esc(c.id.replace(/^o/, '')) + '</a>' }).join(', ') + '</p>' : '')
+    + (errs.length ? co('r', '&#x26A0;&#xFE0F;', 'Edu topic files with problems', esc(errs.join(' | '))) : '');
+}
+// Load the files listed in edu/manifest.js (EDU_FILES = ['encc/3.1', …]) — plain <script> tags, works from file:// too.
+function eduLoadFiles() {
+  const list = (typeof EDU_FILES !== 'undefined' && Array.isArray(EDU_FILES)) ? EDU_FILES : [];
+  if (!list.length) return;
+  let left = list.length;
+  const done = () => {
+    if (--left) return;
+    EDU_FILES_LOADED = list.slice();
+    if (typeof buildCheatTree === 'function') buildCheatTree();     // commands from topic files → cheat sheets
+    if (typeof SEARCH_DOCS !== 'undefined') SEARCH_DOCS = null;       // → search
+    if (typeof buildSidebar === 'function') { buildSidebar(); if (/^(edu|cheat)\//.test(CUR)) render(CUR) }
+  };
+  list.forEach(f => {
+    const el = document.createElement('script');
+    el.src = 'edu/' + f + '.js';
+    el.onload = done;
+    el.onerror = () => { EDU_ERRORS.push('edu/' + f + '.js: listed in edu/manifest.js but could not be loaded'); done() };
+    document.head.appendChild(el);
+  });
 }
