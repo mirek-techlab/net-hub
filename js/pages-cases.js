@@ -358,3 +358,139 @@ object network HOSTS_10.112.114.1-59
 }
 
 RENDERERS[ASA_MC] = pgCaseASAMultiContext;
+
+// ── Case: outbound path verification through ACI and F5 ──
+(function () {
+  const sub = TREE.find(t => t.id === 'cisco').subs.find(s => s.id === 'aci');
+  if (!sub.pages.some(p => p.id === 'case-outbound-path')) sub.pages.push({ id: 'case-outbound-path', label: 'Case: outbound path verification' });
+})();
+
+const ACI_PATH_CASE = 'cisco/aci/case-outbound-path';
+defCmds(ACI_PATH_CASE, [
+  { grp: 'aci', lang: 'APIC', cmd: 'show endpoint ip <source-ip>', d: 'tenant, EPG, leaf, interface and VLAN of the source; Create TS is worth comparing with change records', tags: ['aci'], k: 'where is this server connected which leaf epg endpoint' },
+  { grp: 'aci', lang: 'APIC', cmd: `moquery -c fvAEPg -f 'fv.AEPg.name=="<epg>"'`, d: 'confirm the EPG and get its DN', tags: ['aci', 'aci-moquery'], k: 'find epg dn' },
+  { grp: 'aci', lang: 'APIC', cmd: `moquery -c fvRsBd -f 'fv.RsBd.dn=="<epg-dn>/rsbd"'`, d: 'EPG to bridge domain', tags: ['aci', 'aci-moquery'], k: 'which bridge domain does the epg use' },
+  { grp: 'aci', lang: 'APIC', cmd: `moquery -c fvRsCtx -f 'fv.RsCtx.dn=="uni/tn-<tenant>/BD-<bd>/rsctx"'`, d: 'bridge domain to VRF', tags: ['aci', 'aci-moquery'], k: 'which vrf does the bridge domain use' },
+  { grp: 'aci', lang: 'APIC', cmd: 'fabric <source-leaf>,<border-leaf-1>,<border-leaf-2> show ip route vrf <tenant>:<vrf> <dest-ip>', d: 'route on several nodes in one command; the source leaf shows TEPs, border leaves the external next hop', tags: ['aci'], k: 'route on multiple leaves at once fabric command egress next hop l3out' },
+  { grp: 'aci', lang: 'APIC', cmd: 'acidiag fnvread | grep -E "<tep-1>|<tep-2>"', d: 'map overlay TEP addresses to nodes', tags: ['aci'], k: 'which node owns this tep overlay-1 next hop' },
+  { grp: 'aci', lang: 'APIC', cmd: `moquery -c ipv4Addr -f 'ipv4.Addr.addr=="<tep>/32"'`, d: 'look up one TEP; the DN names the node, modTs is the last change', tags: ['aci', 'aci-moquery'], k: 'tep lookup node lo0 modts' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'show cm traffic-group', d: 'which unit holds which traffic group; do this before reading stats', tags: ['f5'], k: 'which unit is active for this traffic group show sys failover misleading' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list ltm virtual one-line | grep -v "mask 255.255.255.255"', d: 'virtual servers that are not host VIPs, e.g. forwarding', tags: ['f5'], k: 'is there a forwarding virtual server outbound through f5' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list ltm snat one-line', d: 'SNAT objects that could carry outbound traffic', tags: ['f5'], k: 'outbound snat object server subnet' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list ltm snatpool one-line', d: 'SNAT pools', tags: ['f5'], k: 'snat pool outbound translation' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list ltm virtual one-line | grep -E "type (automap|snat)"', d: 'SNAT set on virtual servers; applies only to traffic that hits that VS', tags: ['f5'], k: 'source-address-translation automap snat on virtual server' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list net self one-line | grep <subnet-prefix>', d: 'self IPs in the server subnet; compare with the server gateway', tags: ['f5'], k: 'is the f5 the default gateway self ip floating' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'show sys connection cs-client-addr <server-ip>%<rd>', d: 'flows where the server is the clientside remote address, i.e. it connects through the F5; empty is a point-in-time result only', tags: ['f5'], k: 'does this server have connections through f5 route domain client side' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'show sys connection ss-server-addr <server-ip>%<rd>', d: 'flows where the server is the serverside remote address, i.e. the F5 connects to it as a backend', tags: ['f5'], k: 'connections from f5 to pool member backend server side' },
+  { grp: 'f5', lang: 'bash on BIG-IP', cmd: 'rdexec <rd> curl -vk --max-time 5 https://<member-ip>:<port>/<path>', d: 'test a backend from the F5 in its route domain', tags: ['f5'], k: 'pool member down connection refused or timeout test from f5' },
+  { grp: 'server', lang: 'Linux', cmd: 'traceroute -n -T -p 443 <dest-ip>', d: 'TCP traceroute to the application port; usually needs root', tags: ['linux'], k: 'tcp traceroute port 443' },
+]);
+
+RENDERERS[ACI_PATH_CASE] = () => caseRender({
+  page: ACI_PATH_CASE,
+  title: 'Case: outbound path verification through ACI and F5',
+  subtitle: 'An application fails intermittently towards an external HTTPS API. Is the load balancer in the path, where does the fabric send the traffic, and where does your scope end?',
+  tags: [['tp', 'Cisco ACI'], ['tb', 'F5 BIG-IP'], ['ta', 'Routing'], ['ta', 'Troubleshooting']],
+  summary: [
+    ['Symptom', 'intermittent HTTPS failures from application servers to an external API; ICMP is clean and the provider does not see the requests'],
+    ['Finding', 'the reviewed routing and F5 configuration did not identify the F5 in the outbound path; both border leaves use one static default route to an external WAN router'],
+    ['Root cause', 'not confirmed: ACI routing did not explain the errors'],
+    ['Next owner', 'the external network team, plus the application team for the underlying exception'],
+  ],
+  problem: '<p>Application servers report a generic IOException when calling an external HTTPS API. Failures complete in a few hundred milliseconds and happen on several servers. ICMP monitoring is clean, and the API provider sees no failed requests. The servers are also pool members behind an F5, so it is not obvious whether the F5 is in this path.</p>',
+  environment: tbl(['Item', 'Example value'], [
+    ['Source server', '<code>10.0.10.8</code>'],
+    ['Default gateway', '<code>10.0.10.1</code>'],
+    ['Destination', '<code>203.0.113.43</code>, TCP 443'],
+    ['Tenant / VRF', '<code>TENANT-A</code> / <code>MAIN-VRF</code>'],
+    ['Source leaf', '<code>201</code>'],
+    ['Border leaves', '<code>101</code>, <code>102</code>'],
+    ['External next hop (VIP)', '<code>192.0.2.4</code>'],
+    ['F5 self IP / route domain', '<code>10.0.10.201</code> / <code>10</code>'],
+  ]),
+  investigation: [
+    {
+      title: 'Locate the source endpoint',
+      body: '<p>The endpoint lookup gives the tenant, EPG, leaf, interface and VLAN. A <code>00:50:56</code> MAC prefix usually means a VMware VM.</p>'
+        + cb('APIC', `show endpoint ip 10.0.10.8
+
+End Point MAC      IP Address  Source   Node  Interface  Encap
+00:50:56:00:00:01  10.0.10.8   learned  201   eth1/10    vlan-100`),
+    },
+    {
+      title: 'Follow EPG to bridge domain to VRF',
+      body: '<p>The EPG does not show the VRF directly, so go through the bridge domain. Routing commands use the format <code>TENANT:VRF</code>, here <code>TENANT-A:MAIN-VRF</code>.</p>',
+    },
+    {
+      title: 'Check whether the F5 is in the path',
+      body: '<p>A virtual server handles connections that arrive on its VIP. A call the server opens itself is a separate connection that follows the server\'s own routing. Check which unit holds the relevant traffic group first: with several traffic groups, <code>show sys failover</code> can say active even though the unit does not carry the group you care about.</p>'
+        + tbl(['Check', 'F5 may be in the path', 'F5 is probably not in the path'], [
+          ['Virtual servers', 'forwarding VS with a wide mask', 'only /32 destinations'],
+          ['SNAT', 'SNAT object or SNAT pool for the server subnet, or SNAT on a forwarding VS', 'nothing that matches this traffic'],
+          ['Self IP', 'server gateway is an F5 floating self IP', 'gateway is elsewhere'],
+          ['Connections', 'live <code>cs-client-addr</code> flows from the server', 'none, but this is point-in-time only'],
+        ])
+        + '<p>An empty connection table proves nothing about intermittent traffic, so the server gateway weighs most. Keep the two views apart: <code>cs-client-addr</code> finds the server as a client of the F5, and <code>ss-server-addr</code> finds it as a backend. For a pool member, <code>ss-server-addr</code> flows show inbound traffic, not an outbound call. The absence of an <code>ltm snat</code> object alone does not mean SNAT is unused, so check SNAT pools and <code>source-address-translation</code> on the virtual servers too.</p>'
+        + co('p', '&#x2139;&#xFE0F;', 'Offline pools are a separate question', 'Test a backend directly with <code>rdexec</code>. <code>Connection refused</code> means the TCP connection was actively rejected, for example because no service is listening or a firewall rejects it. Here no firewall sat between the F5 and the servers, so a missing listener was the likely reason. A timeout means packets are dropped or the server does not answer, and an HTTP response should be compared with the monitor\'s <code>recv</code> string.'),
+    },
+    {
+      title: 'Check the route on the source and border leaves',
+      body: '<p><code>fabric</code> accepts several nodes in one command. If you do not know the border leaves yet, run it on the source leaf first and map the TEP addresses.</p>'
+        + cb('APIC', `fabric 201,101,102 show ip route vrf TENANT-A:MAIN-VRF 203.0.113.43
+
+Node 201
+0.0.0.0/0, ubest/mbest: 2/0
+    *via 10.255.0.64%overlay-1, [1/0], 04w04d, bgp-65000, internal
+    *via 10.255.1.64%overlay-1, [1/0], 04w04d, bgp-65000, internal
+
+Node 101
+0.0.0.0/0, ubest/mbest: 1/0
+    *via 192.0.2.4, vlan10, [1/0], 04w04d, static
+
+Node 102
+0.0.0.0/0, ubest/mbest: 1/0
+    *via 192.0.2.4, vlan20, [1/0], 04w04d, static`)
+        + '<p><code>overlay-1</code> next hops are fabric TEP addresses, not the external gateway. The local VLAN numbers differ, but the external next hop is the same. The fabric has two egress leaves and only one confirmed external next hop.</p>'
+        + '<p>Two overlay next hops mean two eligible egress leaves. The path of a given TCP flow depends on hashing and fabric forwarding, so traffic may not be split evenly.</p>',
+    },
+    {
+      title: 'Compare with the traceroute',
+      body: cb('Linux', `traceroute to 203.0.113.43
+ 1  10.0.10.1
+ 2  192.0.2.2   10.0.10.1   192.0.2.2
+ 3  192.0.2.6
+ 4  192.0.2.28`)
+        + tbl(['Hop', 'Address', 'Meaning'], [
+          ['1', '<code>10.0.10.1</code>', 'ACI anycast gateway'],
+          ['2', '<code>192.0.2.2</code>', 'border leaf L3Out interface'],
+          ['3', '<code>192.0.2.6</code>', 'real IP of the WAN router behind VIP <code>192.0.2.4</code>'],
+          ['4', '<code>192.0.2.28</code>', 'firewall'],
+        ])
+        + '<p><strong>Hop 3 is not the VIP</strong> because the router answered ICMP <code>TTL exceeded</code> from its real interface IP, which is common with HSRP or VRRP. It is not a universal rule: the source IP depends on the implementation and configuration.</p>'
+        + '<p><strong>The firewall follows the WAN router on the same subnet</strong> because both share the L3Out VLAN. Traffic between them crosses ACI at Layer 2 and adds no routed hop. The WAN router\'s own routing decides this step, so only its owner can explain it.</p>'
+        + '<p><strong>Hop 2 shows two addresses</strong> because each probe is independent and the source leaf has two ECMP paths. The repeated gateway address is not proof of a loop. Why it answered from the anycast address was not confirmed.</p>',
+    },
+    {
+      title: 'Hand over at the scope boundary',
+      body: '<p>Ask the owner of the external network to confirm the intended design between the WAN router and firewall, the return path to the server subnet, whether NAT, IPS or SSL inspection affects the traffic, and whether drops, resets or session timeouts match the failure times. Give them the source, destination, port and exact timestamps with the time zone.</p>',
+    },
+  ],
+  commandGroups: { aci: 'ACI path', f5: 'F5 checks', server: 'Server' },
+  rootCause: [
+    { src: 'documented', text: 'Both border leaves have a static default route to the same external next hop, and the first traceroute hop is the ACI gateway rather than an F5 self IP.' },
+    { src: 'derived', text: 'The reviewed routing and F5 configuration did not identify the F5 as part of the outbound path. This is strong evidence, not general proof, because a device further downstream or a transparent element would not show up here.' },
+    { src: 'derived', text: 'The cause of the application errors is not confirmed. ACI routing did not explain them, so the investigation moved to the external path and the application logs.' },
+  ],
+  resolution: '<p>The path was confirmed up to the external next hop and handed over to the external network owner. Nothing was changed in ACI or on the F5.</p>',
+  lessons: [
+    'A pool member is not automatically behind the load balancer for outbound calls. Check its gateway.',
+    'With several traffic groups, check which unit holds the group before reading its stats.',
+    'Identify the EPG, BD and VRF before checking routes, and start on the leaf where the source is learned.',
+    'Check every egress border leaf. Two ECMP paths in the fabric do not mean two independent external paths.',
+    'A route tells you the next hop, not why the design uses it.',
+    'ICMP and traceroute do not prove that TCP or TLS works.',
+    'Generic application errors do not identify the failing layer. Ask for the underlying exception.',
+    'Check the path in both directions when failures are intermittent.',
+    'Compare route age, endpoint creation time and change records, but treat a time match as a correlation only.',
+  ],
+});
