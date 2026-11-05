@@ -33,7 +33,7 @@ js/commands.js    command registry (defCmds), cheat sheets, cmdBlock / cmdTable,
 js/edu.js         study tracks (ENCC, Nokia DCF), topic status, roadmap, loader for topic files
 edu/manifest.js   list of Edu topic files to load
 edu/<track>/<id>.js  one study-notes file per topic (format below)
-js/pages-*.js     built-in reference pages per vendor (cisco, fortinet, f5, f5 cases & CVEs, theory, testing tools, cases)
+js/pages-*.js     built-in reference pages per vendor (cisco, fortinet, f5, f5 cases & CVEs, theory, testing tools, scripting, cases)
 tools/            helper scripts, e.g. f5-test-members.sh (test pool members from the BIG-IP)
 js/app.js         navigation, editor, .txt import, custom pages, search, mind map, backup
 js/ai.js          AI assistant (Claude API, called directly from the browser)
