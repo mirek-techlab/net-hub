@@ -414,12 +414,36 @@ RENDERERS[ACI_PATH_CASE] = () => caseRender({
       body: '<p>The endpoint lookup gives the tenant, EPG, leaf, interface and VLAN. A <code>00:50:56</code> MAC prefix usually means a VMware VM.</p>'
         + cb('APIC', `show endpoint ip 10.0.10.8
 
+Tenant      : TENANT-A
+Application : APP-AP
+AEPg        : APP-SERVERS-EPG
+
 End Point MAC      IP Address  Source   Node  Interface  Encap
 00:50:56:00:00:01  10.0.10.8   learned  201   eth1/10    vlan-100`),
     },
     {
-      title: 'Follow EPG to bridge domain to VRF',
-      body: '<p>The EPG does not show the VRF directly, so go through the bridge domain. Routing commands use the format <code>TENANT:VRF</code>, here <code>TENANT-A:MAIN-VRF</code>.</p>',
+      title: 'Confirm the EPG',
+      body: cb('APIC', `moquery -c fvAEPg -f 'fv.AEPg.name=="APP-SERVERS-EPG"'
+
+name     : APP-SERVERS-EPG
+dn       : uni/tn-TENANT-A/ap-APP-AP/epg-APP-SERVERS-EPG
+configSt : applied`)
+        + '<p>This confirms the EPG exists and gives its DN. The EPG does not show the VRF directly, so go through the bridge domain.</p>',
+    },
+    {
+      title: 'Find the bridge domain',
+      body: cb('APIC', `moquery -c fvRsBd -f 'fv.RsBd.dn=="uni/tn-TENANT-A/ap-APP-AP/epg-APP-SERVERS-EPG/rsbd"'
+
+tDn        : uni/tn-TENANT-A/BD-APP-SERVERS-BD
+tnFvBDName : APP-SERVERS-BD`)
+        + '<p>The <code>fvRsBd</code> relation connects the EPG to its bridge domain.</p>',
+    },
+    {
+      title: 'Find the VRF',
+      body: cb('APIC', `moquery -c fvRsCtx -f 'fv.RsCtx.dn=="uni/tn-TENANT-A/BD-APP-SERVERS-BD/rsctx"'
+
+tnFvCtxName : MAIN-VRF`)
+        + '<p>Routing commands use the format <code>TENANT:VRF</code>, here <code>TENANT-A:MAIN-VRF</code>.</p>',
     },
     {
       title: 'Check whether the F5 is in the path',
@@ -452,6 +476,18 @@ Node 102
     *via 192.0.2.4, vlan20, [1/0], 04w04d, static`)
         + '<p><code>overlay-1</code> next hops are fabric TEP addresses, not the external gateway. The local VLAN numbers differ, but the external next hop is the same. The fabric has two egress leaves and only one confirmed external next hop.</p>'
         + '<p>Two overlay next hops mean two eligible egress leaves. The path of a given TCP flow depends on hashing and fabric forwarding, so traffic may not be split evenly.</p>',
+    },
+    {
+      title: 'Map the TEP addresses to nodes',
+      body: cb('APIC', `acidiag fnvread | grep -E "10.255.0.64|10.255.1.64"
+
+101  1  leaf-101  10.255.1.64/32  leaf  active
+102  1  leaf-102  10.255.0.64/32  leaf  active`)
+        + '<p>You can also check a single address. The DN names the node and <code>modTs</code> shows the last change.</p>'
+        + cb('APIC', `moquery -c ipv4Addr -f 'ipv4.Addr.addr=="10.255.0.64/32"'
+
+dn    : topology/pod-1/node-102/sys/ipv4/inst/dom-overlay-1/if-[lo0]/addr-[10.255.0.64/32]
+modTs : <timestamp>`),
     },
     {
       title: 'Compare with the traceroute',
