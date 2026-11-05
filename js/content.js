@@ -40,6 +40,8 @@ const TREE=[
 // ── HELPERS ──────────────────────────────────────────────────
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function cb(lang,code){return'<div class="cb"><div class="ch"><span class="cl">'+lang+'</span><button class="cp" onclick="cpCode(this)">copy</button></div><pre>'+esc(code.trim())+'</pre></div>'}
+// code block with the lines that matter marked: cbm('APIC', output, ['tnFvCtxName'])
+function cbm(lang,code,marks){const body=code.trim().split('\n').map(l=>marks.some(m=>l.includes(m))?'<span class="mk">'+esc(l)+'</span>':esc(l)).join('\n');return cb(lang,'\u0000').replace(esc('\u0000'),body)}
 function co(type,icon,title,body){return'<div class="co co-'+type+'"><div class="co-i">'+icon+'</div><div class="co-b"><strong>'+title+'</strong><p>'+body+'</p></div></div>'}
 function tbl(hdrs,rows){return'<div class="tw"><table><thead><tr>'+hdrs.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
 function tag(cls,txt){return'<span class="tag '+cls+'">'+txt+'</span>'}
