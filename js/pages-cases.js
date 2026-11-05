@@ -377,8 +377,11 @@ defCmds(ACI_PATH_CASE, [
   { grp: 'f5', lang: 'tmsh', cmd: 'show cm traffic-group', d: 'which unit holds which traffic group; do this before reading stats', tags: ['f5'], k: 'which unit is active for this traffic group show sys failover misleading' },
   { grp: 'f5', lang: 'tmsh', cmd: 'list ltm virtual one-line | grep -v "mask 255.255.255.255"', d: 'virtual servers that are not host VIPs, e.g. forwarding', tags: ['f5'], k: 'is there a forwarding virtual server outbound through f5' },
   { grp: 'f5', lang: 'tmsh', cmd: 'list ltm snat one-line', d: 'SNAT objects that could carry outbound traffic', tags: ['f5'], k: 'outbound snat object server subnet' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list ltm snatpool one-line', d: 'SNAT pools', tags: ['f5'], k: 'snat pool outbound translation' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'list ltm virtual one-line | grep -E "type (automap|snat)"', d: 'SNAT set on virtual servers; applies only to traffic that hits that VS', tags: ['f5'], k: 'source-address-translation automap snat on virtual server' },
   { grp: 'f5', lang: 'tmsh', cmd: 'list net self one-line | grep <subnet-prefix>', d: 'self IPs in the server subnet; compare with the server gateway', tags: ['f5'], k: 'is the f5 the default gateway self ip floating' },
-  { grp: 'f5', lang: 'tmsh', cmd: 'show sys connection cs-client-addr <server-ip>%<rd>', d: 'live flows from the server; empty is a point-in-time result only', tags: ['f5'], k: 'does this server have connections through f5 route domain' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'show sys connection cs-client-addr <server-ip>%<rd>', d: 'flows where the server is the clientside remote address, i.e. it connects through the F5; empty is a point-in-time result only', tags: ['f5'], k: 'does this server have connections through f5 route domain client side' },
+  { grp: 'f5', lang: 'tmsh', cmd: 'show sys connection ss-server-addr <server-ip>%<rd>', d: 'flows where the server is the serverside remote address, i.e. the F5 connects to it as a backend', tags: ['f5'], k: 'connections from f5 to pool member backend server side' },
   { grp: 'f5', lang: 'bash on BIG-IP', cmd: 'rdexec <rd> curl -vk --max-time 5 https://<member-ip>:<port>/<path>', d: 'test a backend from the F5 in its route domain', tags: ['f5'], k: 'pool member down connection refused or timeout test from f5' },
   { grp: 'server', lang: 'Linux', cmd: 'traceroute -n -T -p 443 <dest-ip>', d: 'TCP traceroute to the application port; usually needs root', tags: ['linux'], k: 'tcp traceroute port 443' },
 ]);
@@ -390,7 +393,7 @@ RENDERERS[ACI_PATH_CASE] = () => caseRender({
   tags: [['tp', 'Cisco ACI'], ['tb', 'F5 BIG-IP'], ['ta', 'Routing'], ['ta', 'Troubleshooting']],
   summary: [
     ['Symptom', 'intermittent HTTPS failures from application servers to an external API; ICMP is clean and the provider does not see the requests'],
-    ['Finding', 'outbound traffic does not pass through the F5; both border leaves use one static default route to an external WAN router'],
+    ['Finding', 'the reviewed routing and F5 configuration did not identify the F5 in the outbound path; both border leaves use one static default route to an external WAN router'],
     ['Root cause', 'not confirmed: ACI routing did not explain the errors'],
     ['Next owner', 'the external network team, plus the application team for the underlying exception'],
   ],
@@ -423,12 +426,12 @@ End Point MAC      IP Address  Source   Node  Interface  Encap
       body: '<p>A virtual server handles connections that arrive on its VIP. A call the server opens itself is a separate connection that follows the server\'s own routing. Check which unit holds the relevant traffic group first: with several traffic groups, <code>show sys failover</code> can say active even though the unit does not carry the group you care about.</p>'
         + tbl(['Check', 'F5 may be in the path', 'F5 is probably not in the path'], [
           ['Virtual servers', 'forwarding VS with a wide mask', 'only /32 destinations'],
-          ['LTM SNAT', 'SNAT object for the server subnet', 'no objects'],
+          ['SNAT', 'SNAT object or SNAT pool for the server subnet, or SNAT on a forwarding VS', 'nothing that matches this traffic'],
           ['Self IP', 'server gateway is an F5 floating self IP', 'gateway is elsewhere'],
-          ['Connections', 'live flows from the server', 'none, but this is point-in-time only'],
+          ['Connections', 'live <code>cs-client-addr</code> flows from the server', 'none, but this is point-in-time only'],
         ])
-        + '<p>An empty connection table proves nothing about intermittent traffic, so the server gateway decides this.</p>'
-        + co('p', '&#x2139;&#xFE0F;', 'Offline pools are a separate question', 'Test a backend directly with <code>rdexec</code>. <code>Connection refused</code> means nothing is listening, a timeout means packets are dropped or the server does not answer, and an HTTP response should be compared with the monitor\'s <code>recv</code> string.'),
+        + '<p>An empty connection table proves nothing about intermittent traffic, so the server gateway weighs most. Keep the two views apart: <code>cs-client-addr</code> finds the server as a client of the F5, and <code>ss-server-addr</code> finds it as a backend. For a pool member, <code>ss-server-addr</code> flows show inbound traffic, not an outbound call. The absence of an <code>ltm snat</code> object alone does not mean SNAT is unused, so check SNAT pools and <code>source-address-translation</code> on the virtual servers too.</p>'
+        + co('p', '&#x2139;&#xFE0F;', 'Offline pools are a separate question', 'Test a backend directly with <code>rdexec</code>. <code>Connection refused</code> means the TCP connection was actively rejected, for example because no service is listening or a firewall rejects it. Here no firewall sat between the F5 and the servers, so a missing listener was the likely reason. A timeout means packets are dropped or the server does not answer, and an HTTP response should be compared with the monitor\'s <code>recv</code> string.'),
     },
     {
       title: 'Check the route on the source and border leaves',
@@ -447,7 +450,8 @@ Node 101
 Node 102
 0.0.0.0/0, ubest/mbest: 1/0
     *via 192.0.2.4, vlan20, [1/0], 04w04d, static`)
-        + '<p><code>overlay-1</code> next hops are fabric TEP addresses, not the external gateway. The local VLAN numbers differ, but the external next hop is the same. The fabric has two egress leaves and only one confirmed external next hop.</p>',
+        + '<p><code>overlay-1</code> next hops are fabric TEP addresses, not the external gateway. The local VLAN numbers differ, but the external next hop is the same. The fabric has two egress leaves and only one confirmed external next hop.</p>'
+        + '<p>Two overlay next hops mean two eligible egress leaves. The path of a given TCP flow depends on hashing and fabric forwarding, so traffic may not be split evenly.</p>',
     },
     {
       title: 'Compare with the traceroute',
@@ -462,7 +466,7 @@ Node 102
           ['3', '<code>192.0.2.6</code>', 'real IP of the WAN router behind VIP <code>192.0.2.4</code>'],
           ['4', '<code>192.0.2.28</code>', 'firewall'],
         ])
-        + '<p><strong>Hop 3 is not the VIP</strong> because a router sends ICMP <code>TTL exceeded</code> from its real interface IP, not from an HSRP or VRRP address.</p>'
+        + '<p><strong>Hop 3 is not the VIP</strong> because the router answered ICMP <code>TTL exceeded</code> from its real interface IP, which is common with HSRP or VRRP. It is not a universal rule: the source IP depends on the implementation and configuration.</p>'
         + '<p><strong>The firewall follows the WAN router on the same subnet</strong> because both share the L3Out VLAN. Traffic between them crosses ACI at Layer 2 and adds no routed hop. The WAN router\'s own routing decides this step, so only its owner can explain it.</p>'
         + '<p><strong>Hop 2 shows two addresses</strong> because each probe is independent and the source leaf has two ECMP paths. The repeated gateway address is not proof of a loop. Why it answered from the anycast address was not confirmed.</p>',
     },
@@ -473,8 +477,8 @@ Node 102
   ],
   commandGroups: { aci: 'ACI path', f5: 'F5 checks', server: 'Server' },
   rootCause: [
-    { src: 'documented', text: 'Both border leaves have a static default route to the same external next hop, and the server gateway is the ACI anycast gateway rather than the F5.' },
-    { src: 'derived', text: 'Outbound traffic does not pass through the F5. The route tables and the traceroute agree on this.' },
+    { src: 'documented', text: 'Both border leaves have a static default route to the same external next hop, and the first traceroute hop is the ACI gateway rather than an F5 self IP.' },
+    { src: 'derived', text: 'The reviewed routing and F5 configuration did not identify the F5 as part of the outbound path. This is strong evidence, not general proof, because a device further downstream or a transparent element would not show up here.' },
     { src: 'derived', text: 'The cause of the application errors is not confirmed. ACI routing did not explain them, so the investigation moved to the external path and the application logs.' },
   ],
   resolution: '<p>The path was confirmed up to the external next hop and handed over to the external network owner. Nothing was changed in ACI or on the F5.</p>',
