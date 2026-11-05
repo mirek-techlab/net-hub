@@ -427,7 +427,8 @@ End Point MAC      IP Address  Source   Node  Interface  Encap
 
 name     : APP-SERVERS-EPG
 dn       : uni/tn-TENANT-A/ap-APP-AP/epg-APP-SERVERS-EPG
-configSt : applied`, ['dn       :'])
+configSt : applied
+shutdown : no`, ['dn       :'])
         + '<p><strong>Look for:</strong> <code>dn</code>, which you need for the next query. The EPG does not show the VRF directly, so go through the bridge domain.</p>',
     },
     {
@@ -436,14 +437,14 @@ configSt : applied`, ['dn       :'])
 
 tDn        : uni/tn-TENANT-A/BD-APP-SERVERS-BD
 tnFvBDName : APP-SERVERS-BD`, ['tnFvBDName'])
-        + '<p><strong>Look for:</strong> <code>tnFvBDName</code>. The <code>fvRsBd</code> relation connects the EPG to its bridge domain.</p>',
+        + '<p><strong>Look for:</strong> <code>tnFvBDName</code>. The <code>fvRsBd</code> relation connects the EPG to its bridge domain, which determines the L3 context of the endpoint.</p>',
     },
     {
       title: 'Find the VRF',
       body: cbm('APIC', `moquery -c fvRsCtx -f 'fv.RsCtx.dn=="uni/tn-TENANT-A/BD-APP-SERVERS-BD/rsctx"'
 
 tnFvCtxName : MAIN-VRF`, ['tnFvCtxName'])
-        + '<p><strong>Look for:</strong> <code>tnFvCtxName</code>. Routing commands use the format <code>TENANT:VRF</code>, here <code>TENANT-A:MAIN-VRF</code>.</p>',
+        + '<p><strong>Look for:</strong> <code>tnFvCtxName</code>. The <code>fvRsCtx</code> relation gives the VRF of the bridge domain. Routing commands use the format <code>TENANT:VRF</code>, here <code>TENANT-A:MAIN-VRF</code>, so routing is checked in the correct tenant and VRF.</p>',
     },
     {
       title: 'Check whether the F5 is in the path',
@@ -465,7 +466,9 @@ tnFvCtxName : MAIN-VRF`, ['tnFvCtxName'])
 Node 201
 0.0.0.0/0, ubest/mbest: 2/0
     *via 10.255.0.64%overlay-1, [1/0], 04w04d, bgp-65000, internal
+         recursive next hop: 10.255.0.64/32%overlay-1
     *via 10.255.1.64%overlay-1, [1/0], 04w04d, bgp-65000, internal
+         recursive next hop: 10.255.1.64/32%overlay-1
 
 Node 101
 0.0.0.0/0, ubest/mbest: 1/0
@@ -474,7 +477,7 @@ Node 101
 Node 102
 0.0.0.0/0, ubest/mbest: 1/0
     *via 192.0.2.4, vlan20, [1/0], 04w04d, static`, ['*via'])
-        + '<p><code>overlay-1</code> next hops are fabric TEP addresses, not the external gateway. The local VLAN numbers differ, but the external next hop is the same. The fabric has two egress leaves and only one confirmed external next hop.</p>'
+        + '<p>The destination matches the default route. <code>ubest/mbest: 2/0</code> on the source leaf means two best unicast next hops and no multicast best paths. <code>overlay-1</code> next hops are fabric TEP addresses, not the external gateway. The local VLAN numbers differ, but the external next hop is the same. The fabric has two egress leaves and only one confirmed external next hop, not two independently confirmed external paths.</p>'
         + '<p>Two overlay next hops mean two eligible egress leaves. The path of a given TCP flow depends on hashing and fabric forwarding, so traffic may not be split evenly.</p>',
     },
     {
@@ -523,7 +526,9 @@ vpcPeer          : 0.0.0.0`, ['dn               :', 'modTs            :', 'operS
         ])
         + '<p><strong>Hop 3 is not the VIP</strong> because the router answered ICMP <code>TTL exceeded</code> from its real interface IP, which is common with HSRP or VRRP. It is not a universal rule: the source IP depends on the implementation and configuration.</p>'
         + '<p><strong>The firewall follows the WAN router on the same subnet</strong> because both share the L3Out VLAN. Traffic between them crosses ACI at Layer 2 and adds no routed hop. The WAN router\'s own routing decides this step, so only its owner can explain it.</p>'
-        + '<p><strong>Hop 2 shows two addresses</strong> because each probe is independent and the source leaf has two ECMP paths. The repeated gateway address is not proof of a loop. Why it answered from the anycast address was not confirmed.</p>',
+        + '<p><strong>Hop 2 shows two addresses</strong> because each probe is independent and the source leaf has two ECMP paths. The repeated gateway address is not proof of a loop. Why it answered from the anycast address was not confirmed.</p>'
+        + '<p>A traceroute shows the devices that respond. It does not fully establish the forwarding or return path of an application TCP session, and it may follow a different ECMP path than an established connection. To test the application port, use a TCP traceroute, which usually needs root.</p>'
+        + cb('Linux', 'traceroute -n -T -p 443 203.0.113.43'),
     },
     {
       title: 'Hand over at the scope boundary',
@@ -534,6 +539,8 @@ vpcPeer          : 0.0.0.0`, ['dn               :', 'modTs            :', 'operS
   rootCause: [
     { src: 'documented', text: 'Both border leaves have a static default route to the same external next hop, and the first traceroute hop is the ACI gateway rather than an F5 self IP.' },
     { src: 'derived', text: 'The reviewed routing and F5 configuration did not identify the F5 as part of the outbound path. This is strong evidence, not general proof, because a device further downstream or a transparent element would not show up here.' },
+    { src: 'documented', text: 'The reviewed ACI configuration does not forward the traffic directly to the firewall. It goes to the WAN router VIP first.' },
+    { src: 'derived', text: 'No ACI routing issue was identified from the available outputs.' },
     { src: 'derived', text: 'The cause of the application errors is not confirmed. ACI routing did not explain them, so the investigation moved to the external path and the application logs.' },
   ],
   resolution: '<p>The path was confirmed up to the external next hop and handed over to the external network owner. Nothing was changed in ACI or on the F5.</p>',
@@ -542,10 +549,13 @@ vpcPeer          : 0.0.0.0`, ['dn               :', 'modTs            :', 'operS
     'With several traffic groups, check which unit holds the group before reading its stats.',
     'Identify the EPG, BD and VRF before checking routes, and start on the leaf where the source is learned.',
     'Check every egress border leaf. Two ECMP paths in the fabric do not mean two independent external paths.',
+    'An overlay next hop is not necessarily the final external gateway.',
     'A route tells you the next hop, not why the design uses it.',
+    'Different L3Out interfaces may show different local VLAN numbers for the same external next hop.',
     'ICMP and traceroute do not prove that TCP or TLS works.',
     'Generic application errors do not identify the failing layer. Ask for the underlying exception.',
     'Check the path in both directions when failures are intermittent.',
     'Compare route age, endpoint creation time and change records, but treat a time match as a correlation only.',
+    'Keep verified routing facts separate from hypotheses about application or firewall failures.',
   ],
 });
