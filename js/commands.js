@@ -41,6 +41,7 @@ const TAG_META = {
   'cisco-iosxe': { l: 'Cisco IOS XE', f: 'cisco' },
   'cisco-iosxr': { l: 'Cisco IOS XR', f: 'cisco' },
   'aci-moquery': { l: 'ACI moquery', f: 'cisco' },
+  'aci': { l: 'Cisco ACI', f: 'cisco' },
   'nxos': { l: 'Nexus / NX-OS', f: 'cisco' },
   'ipsec': { l: 'IPsec / IKE', f: 'vpn' },
   'f5': { l: 'F5 general', f: 'f5' },
