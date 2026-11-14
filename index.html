@@ -276,12 +276,14 @@ sup.src-ref a{color:var(--teal);cursor:pointer;font-size:10px}
   .ph,.content,.chat-m,.cia,.ai-set,.ctx-bar,.mm-tools{padding-left:16px;padding-right:16px}
   .mm-legend{margin-left:0}
 }
+.gateway-link{display:inline-flex;align-items:center;gap:5px;color:var(--text2);font:11px var(--fc);text-decoration:none;border:1px solid var(--border2);border-radius:5px;padding:4px 8px;white-space:nowrap}.gateway-link:hover{color:var(--teal);border-color:var(--teal)}@media(max-width:650px){.gateway-link{padding:3px 6px;font-size:13px}.gateway-link span{display:none}.deep-link{color:var(--amber)}}
 </style>
 </head>
 <body>
 <div id="topbar">
   <button id="menu-btn" onclick="document.body.classList.toggle('nav-open')" aria-label="Menu">&#9776;</button>
   <div class="bc" id="breadcrumb"></div>
+  <a class="gateway-link" href="./portal.html" title="Personal Hub rozcestník">⌂ <span>Rozcestník</span></a><a class="gateway-link deep-link" href="https://mirek-techlab.github.io/deep-thoughts/" title="Deep Thoughts">◈ <span>Deep Thoughts</span></a>
   <div id="save-ind"></div>
   <button id="edit-btn" onclick="toggleEdit()">&#x270F; Edit</button>
 </div>
