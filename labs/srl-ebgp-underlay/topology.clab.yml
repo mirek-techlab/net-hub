@@ -1,0 +1,42 @@
+# SR Linux eBGP underlay — 2 spines, 2 leaves, 2 clients
+# Deploy:  sudo containerlab deploy -t topology.clab.yml
+# Destroy: sudo containerlab destroy -t topology.clab.yml
+name: srl-ebgp
+
+topology:
+  kinds:
+    nokia_srlinux:
+      image: ghcr.io/nokia/srlinux      # pin a tag once tested, e.g. ghcr.io/nokia/srlinux:<version>
+      type: ixr-d2l                     # containerlab default type; runs without a licence
+    linux:
+      image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    spine1: { kind: nokia_srlinux, startup-config: configs/spine1.cli }
+    spine2: { kind: nokia_srlinux, startup-config: configs/spine2.cli }
+    leaf1:  { kind: nokia_srlinux, startup-config: configs/leaf1.cli }
+    leaf2:  { kind: nokia_srlinux, startup-config: configs/leaf2.cli }
+    client1:
+      kind: linux
+      exec:
+        - ip route add 10.0.0.0/8 via 10.11.0.1 dev eth1
+    client2:
+      kind: linux
+      exec:
+        - ip route add 10.0.0.0/8 via 10.12.0.1 dev eth1
+
+  links:
+    # fabric links (/31) — containerlab configures subinterface 0 with these addresses
+    - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
+      ipv4: ["10.0.1.0/31", "10.0.1.1/31"]
+    - endpoints: ["spine1:e1-2", "leaf2:e1-1"]
+      ipv4: ["10.0.1.2/31", "10.0.1.3/31"]
+    - endpoints: ["spine2:e1-1", "leaf1:e1-2"]
+      ipv4: ["10.0.2.0/31", "10.0.2.1/31"]
+    - endpoints: ["spine2:e1-2", "leaf2:e1-2"]
+      ipv4: ["10.0.2.2/31", "10.0.2.3/31"]
+    # client links (/24)
+    - endpoints: ["leaf1:e1-3", "client1:eth1"]
+      ipv4: ["10.11.0.1/24", "10.11.0.10/24"]
+    - endpoints: ["leaf2:e1-3", "client2:eth1"]
+      ipv4: ["10.12.0.1/24", "10.12.0.10/24"]

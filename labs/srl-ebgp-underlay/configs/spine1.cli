@@ -1,0 +1,37 @@
+# spine1 — AS 65100 (both spines share one AS, RFC 7938 style), eBGP to each leaf
+# Partial SR Linux CLI config, applied at boot by containerlab (no candidate/commit needed).
+routing-policy {
+    policy all {
+        default-action {
+            policy-result accept
+        }
+    }
+}
+network-instance default {
+    interface ethernet-1/1.0 {
+    }
+    interface ethernet-1/2.0 {
+    }
+    protocols {
+        bgp {
+            admin-state enable
+            autonomous-system 65100
+            router-id 10.255.0.1
+            group leaves {
+                export-policy [ all ]
+                import-policy [ all ]
+                afi-safi ipv4-unicast {
+                    admin-state enable
+                }
+            }
+            neighbor 10.0.1.1 {
+                peer-group leaves
+                peer-as 65001
+            }
+            neighbor 10.0.1.3 {
+                peer-group leaves
+                peer-as 65002
+            }
+        }
+    }
+}

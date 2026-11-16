@@ -34,6 +34,7 @@ js/edu.js         study tracks (ENCC, Nokia DCF), topic status, roadmap, loader 
 edu/manifest.js   list of Edu topic files to load
 edu/<track>/<id>.js  one study-notes file per topic (format below)
 js/pages-*.js     built-in reference pages per vendor (cisco, fortinet, f5, f5 cases & CVEs, theory, testing tools, scripting, cases)
+labs/<name>/      runnable labs (containerlab topology, configs, docs, test results) — not rendered by the site
 tools/            helper scripts, e.g. f5-test-members.sh (test pool members from the BIG-IP)
 js/app.js         navigation, editor, .txt import, custom pages, search, mind map, backup
 js/ai.js          AI assistant (Claude API, called directly from the browser)
@@ -130,3 +131,9 @@ cannot be loaded) are shown in red on the track overview and on the topic itself
 **Rules:** public repository — no customer/company names, hostnames, real IPs or accounts; use placeholders
 (`<peer-ip>`, `<self-ip>`). Do not copy vendor exam material (questions, answers, practice exams); describe in your
 own words and link the official source.
+
+### Labs
+One folder per lab in `labs/<name>/`: `README.md`, topology (e.g. `topology.clab.yml`), `configs/`,
+`docs/` (addressing, design) and `testing/` (verification, failover results). The site does not render
+these files; link them from the matching Edu topic file. Same anonymisation rules apply.
+Results sections record what was measured, not what was expected.

@@ -2,4 +2,5 @@
 // Add a line when you add a file, e.g. 'encc/3.2' for edu/encc/3.2.js. Order does not matter.
 const EDU_FILES = [
   'encc/3.1',   // example / skeleton — replace with the finished study notes
+  'nokia/o3.1', // SR Linux CLI + eBGP underlay, lab: labs/srl-ebgp-underlay/
 ];

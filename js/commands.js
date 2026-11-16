@@ -34,7 +34,7 @@ function cmdBlock(page, grp, lang, cc) {
 }
 
 // ── Tag metadata: label + family (= sub-topic in "Cheat sheets") ──
-const CMD_FAMILIES = { cisco: 'Cisco', vpn: 'VPN / IPsec', f5: 'F5 BIG-IP', paloalto: 'Palo Alto', fortinet: 'Fortinet', tools: 'Tools', other: 'Other' };
+const CMD_FAMILIES = { cisco: 'Cisco', vpn: 'VPN / IPsec', f5: 'F5 BIG-IP', paloalto: 'Palo Alto', fortinet: 'Fortinet', nokia: 'Nokia', tools: 'Tools', other: 'Other' };
 const TAG_META = {
   'cisco-asa': { l: 'Cisco ASA', f: 'cisco' },
   'asa-multicontext': { l: 'ASA multi-context', f: 'cisco' },
@@ -50,6 +50,8 @@ const TAG_META = {
   'fortigate': { l: 'FortiGate', f: 'fortinet' },
   'linux': { l: 'Linux / bash', f: 'tools' },
   'tcpdump': { l: 'tcpdump', f: 'tools' },
+  'srlinux': { l: 'Nokia SR Linux', f: 'nokia' },
+  'containerlab': { l: 'containerlab', f: 'tools' },
   'edu-example': { l: 'Edu example (placeholder)', f: 'other' },
 };
 const tagSlug = t => String(t).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
