@@ -75,9 +75,9 @@ router bgp <ASN> vrf TN_A-RD0 address-family ipv4 unicast redistribute static ro
 // ACI — moquery
 // ═══════════════════════════════════════════════════════════════════
 function pgACIMoquery() {
-  return '<div class="ph"><div class="pt">ACI &mdash; moquery</div>'
-    + '<div class="ps">Query the APIC object database (MIT) directly &mdash; "SQL for ACI" with Cisco class names</div>'
-    + '<div class="tags">' + tag('tp', 'Cisco') + tag('tp', 'ACI') + tag('tb', 'APIC') + tag('ta', 'moquery') + '</div></div>'
+  return '<div class="ph"><div class="pt">ACI &mdash; moquery &amp; icurl</div>'
+    + '<div class="ps">Query the APIC MIT: CLI troubleshooting, REST API and audit recipes</div>'
+    + '<div class="tags">' + tag('tp', 'Cisco') + tag('tp', 'ACI') + tag('tb', 'APIC') + tag('ta', 'moquery') + tag('ta', 'icurl') + '</div></div>'
     + '<div class="content">'
 
     + '<h2>Mental model &mdash; think in objects, not CLI</h2>'
@@ -109,6 +109,25 @@ moquery -d 'uni/tn-TN_A/BD-TN_A_Web_BD'            # one object by its DN
 moquery -d 'uni/tn-TN_A/BD-TN_A_Web_BD' -x 'query-target=children'   # its children
 moquery -c fvBD -o json                            # JSON output`)
     + co('p', '&#x2139;&#xFE0F;', 'Filter = class name split', '<code>fvBD</code> &rarr; <code>fv.BD</code>, <code>fvCEp</code> &rarr; <code>fv.CEp</code>, <code>l3extSubnet</code> &rarr; <code>l3ext.Subnet</code>, <code>faultInst</code> &rarr; <code>fault.Inst</code>. Operators: <code>==</code>, <code>!=</code>, <code>*</code> (contains), <code>and</code>, <code>or</code>.')
+
+    + "<h2>icurl vs moquery &mdash; same MIT, different clients</h2>"
+    + "<p>Both query the APIC REST API. moquery formats managed objects for interactive use; icurl is a local HTTP client wrapper that exposes the raw REST response. Both support class and DN queries, filters and JSON. From an authorized APIC shell, local icurl normally needs no separate API login; this is not a remote authentication bypass.</p>"
+    + tbl(["Task","moquery","icurl (local API)"], [["Quick human-readable check","moquery -c fvBD","icurl .../class/fvBD.json"],["Exact object by DN","moquery -d uni/tn-TN_A","icurl .../mo/uni/tn-TN_A.json"],["Filter","-f 'fabric.Node.role==\"leaf\"'","query-target-filter=eq(fabricNode.role,\"leaf\")"],["JSON","-o json","JSON endpoint; pipe to jq"],["Children / subtree","-x query-target=children","?query-target=children"],["Best fit","Interactive troubleshooting","API inspection, structured extraction, scripting"]])
+    + cb('APIC bash', "# Query by class\nmoquery -c fvTenant\nicurl 'http://localhost:7777/api/node/class/fvTenant.json'\n\n# Query by DN\nmoquery -d uni/tn-TN_A\nicurl 'http://localhost:7777/api/node/mo/uni/tn-TN_A.json'\n\n# Filter on the APIC, not after fetching everything\nmoquery -c fabricNode -f 'fabric.Node.role==\"leaf\"'\nicurl 'http://localhost:7777/api/node/class/fabricNode.json?query-target-filter=eq(fabricNode.role,\"leaf\")'")
+    + "<h2>REST query scope</h2>"
+    + tbl(["Parameter","Purpose"], [["query-target=self","Selected object (default)"],["query-target=children","Immediate children"],["query-target=subtree","Descendants within the query scope"],["target-subtree-class","Restrict selected classes"],["rsp-subtree=full","Include descendants of returned objects"],["query-target-filter","Server-side attribute filter"]])
+    + "<p>Relationship objects expose references such as tDn. Including a subtree does not automatically dereference these relationships. Keep queries narrow on production fabrics.</p>"
+    + cb('APIC bash', "icurl 'http://localhost:7777/api/node/mo/uni/tn-TN_A.json?query-target=subtree&target-subtree-class=fvBD'\nicurl 'http://localhost:7777/api/node/mo/uni/tn-TN_A.json?rsp-subtree=full'\nmoquery -d uni/tn-TN_A -x query-target=children")
+    + "<h2>JSON extraction &amp; practical API troubleshooting</h2>"
+    + cb('APIC bash', "# Pretty print (depending on installed tools)\nicurl 'http://localhost:7777/api/node/class/fvTenant.json' | jq .\nicurl 'http://localhost:7777/api/node/class/fvTenant.json' | python -m json.tool\n\n# Extract names or related attributes (jq, if available)\nicurl 'http://localhost:7777/api/node/class/fvTenant.json' | jq -r '.imdata[].fvTenant.attributes.name'\nicurl 'http://localhost:7777/api/node/class/fabricNode.json' | jq -r '.imdata[].fabricNode.attributes | [.id,.name,.role] | @tsv'\n\n# Follow a relationship\nicurl 'http://localhost:7777/api/node/mo/uni/tn-TN_A/BD-BD_A/rsctx.json' | jq -r '.imdata[].fvRsCtx.attributes.tDn'")
+    + "<p>Use jq for structured JSON; grep against compact JSON can return the entire line and mix unrelated attributes. For an invalid class, inspect the API error, check spelling and case, and discover the correct class through the DN response or GUI API Inspector. Check local command help and tool availability for your release.</p>"
+    + "<h2>Where do I find it? &mdash; DN examples</h2>"
+    + tbl(["Object","Class","Example DN"], [["Tenant","fvTenant","uni/tn-TN_A"],["VRF","fvCtx","uni/tn-TN_A/ctx-VRF_A"],["BD","fvBD","uni/tn-TN_A/BD-BD_A"],["EPG","fvAEPg","uni/tn-TN_A/ap-APP_A/epg-EPG_A"],["L3Out","l3extOut","uni/tn-TN_A/out-L3OUT_A"],["Fabric node","fabricNode","topology/pod-1/node-101"],["Login lockout","aaaBlockLoginProfile","uni/userext/blockloginp"]])
+    + "<h2>Audit recipe &mdash; account lockout policy</h2>"
+    + cb('APIC bash', "# Incorrect class in this example: HTTP 400\nmoquery -c aaaBlockLogin\n\n# Known DN: discover the actual class in imdata\nicurl 'http://localhost:7777/api/node/mo/uni/userext/blockloginp.json'\n\n# Correct class\nmoquery -c aaaBlockLoginProfile\nmoquery -c aaaBlockLoginProfile | grep -E 'enableLoginBlock|maxFailedAttempts|blockDuration'\n\n# Extract only the required fields\nicurl 'http://localhost:7777/api/node/mo/uni/userext/blockloginp.json' | jq '.imdata[].aaaBlockLoginProfile.attributes | {enableLoginBlock,maxFailedAttempts,maxFailedAttemptsWindow,blockDuration}'")
+    + tbl(["Attribute","Meaning","Illustrative value"], [["enableLoginBlock","Lockout enabled","enable"],["maxFailedAttempts","Failed login threshold","5"],["maxFailedAttemptsWindow","Observation window (minutes)","5"],["blockDuration","Lockout duration (minutes)","60"]])
+    + "<p>Illustrative interpretation: five failed login attempts within five minutes trigger a 60-minute lockout. These example values are not a universal compliance baseline. Compare with the applicable policy and retain timestamped raw evidence in the authorized audit system. The example verifies APIC configuration, not external AAA provider enforcement.</p>"
+    + "<p>Workflow: discover class or DN → query with moquery → inspect raw REST with icurl if needed → filter server-side → extract structured evidence. A valid query is not proof of effective policy enforcement.</p>"
 
     + '<h2>Classes you will use most</h2>'
     + tbl(['Class', 'What'], [
@@ -620,3 +639,5 @@ IDX.push(
   { t: 'Case: slow mainframe transfer (10 Mbit/s WAN segment)', p: 'cisco/nxos/case-mainframe', k: 'mainframe transfer slow wan bottleneck bandwidth upgrade 3.3x enterprise extender ee sna udp hpr shared vrf', v: '10x bandwidth gave 3.3x speed — why' },
   { t: 'Why 10x bandwidth is not 10x faster', p: 'cisco/nxos/case-mainframe', k: 'bandwidth upgrade throughput single flow shared latency bandwidth delay iperf parallel', v: 'Sharing, one flow, protocol, latency, end systems' },
 );
+
+IDX.push({t:'icurl vs moquery — APIC REST API',p:'cisco/aci/moquery',k:'icurl rest api class dn mit jq query-target rsp-subtree filter',v:'Local API queries and structured JSON'}, {t:'APIC account lockout policy',p:'cisco/aci/moquery',k:'aaaBlockLoginProfile blockloginp aaa account lockout audit compliance maxFailedAttempts blockDuration',v:'Query and validate lockout settings'});
